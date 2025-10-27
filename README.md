@@ -75,7 +75,7 @@ fault_tolerant_storage/
 ### 1️⃣ Clone the Repository
 
 ```bash
-git clone https://github.com/<your-username>/fault_tolerant_storage.git
+git clone https://github.com/TUSHAR91316/Fault_tolrent_storage.git
 cd fault_tolerant_storage
 ```
 
