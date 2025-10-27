@@ -1,0 +1,42 @@
+version: '3.8'
+
+services:
+  coordinator:
+    build: ./coordinator
+    ports:
+      - "5000:5000"
+    environment:
+      - NODE_URLS=http://node1:5100,http://node2:5100,http://node3:5100
+    depends_on:
+      - node1
+      - node2
+      - node3
+    volumes:
+      - coordinator_data:/data
+
+  node1:
+    build: ./node
+    ports:
+      - "5101:5100"
+    volumes:
+      - node1_data:/data
+
+  node2:
+    build: ./node
+    ports:
+      - "5102:5100"
+    volumes:
+      - node2_data:/data
+
+  node3:
+    build: ./node
+    ports:
+      - "5103:5100"
+    volumes:
+      - node3_data:/data
+
+volumes:
+  coordinator_data:
+  node1_data:
+  node2_data:
+  node3_data:
