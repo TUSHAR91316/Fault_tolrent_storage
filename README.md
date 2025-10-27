@@ -30,32 +30,8 @@ This project implements **triple-replication** across multiple storage nodes usi
 The system follows a classic **Coordinator-Worker** pattern. The Coordinator handles client requests and metadata, while the Nodes manage file storage and replication.
 
 ```mermaid
-graph LR
-    subgraph Client
-        U[User Interface / Browser]
-    end
+<img width="1024" height="1024" alt="Gemini_Generated_Image_b3ivnzb3ivnzb3iv" src="https://github.com/user-attachments/assets/a6f1f768-2e6a-4544-9bff-1b8dba1a5648" />
 
-    subgraph Core System
-        A[Coordinator (Flask + Bootstrap)]
-        A -->|Upload/Download| B{Node 1}
-        A -->|Manage Replicas| C{Node 2}
-        A -->|Checkpoint/Recover| D{Node 3}
-    end
-
-    Client --> A
-
-    style A fill:#f9f,stroke:#333,stroke-width:2px
-    style B fill:#ccf,stroke:#333,stroke-width:2px
-    style C fill:#ccf,stroke:#333,stroke-width:2px
-    style D fill:#ccf,stroke:#333,stroke-width:2px
-
-    classDef nodeClass fill:#e6ffcc,stroke:#093;
-    class B,C,D nodeClass
-
-    B --> |Store Files & Checkpoints| E[node1_data Volume]
-    C --> |Store Files & Checkpoints| F[node2_data Volume]
-    D --> |Store Files & Checkpoints| G[node3_data Volume]
-    A --> |Metadata Storage| H[coordinator_data Volume]
 ```
 
 ---
