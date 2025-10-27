@@ -36,7 +36,7 @@ graph LR
     end
 
     subgraph Core System
-        A[Coordinator (Flask + Bootstrap)]
+        A[oordinator (Flask + Bootstrap)]
         A -->|Upload/Download| B{Node 1}
         A -->|Manage Replicas| C{Node 2}
         A -->|Checkpoint/Recover| D{Node 3}
