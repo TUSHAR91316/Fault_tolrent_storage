@@ -158,4 +158,4 @@ Educational project under **21CSE479T – Fault Tolerant Systems**.
 ---
 
 > 💡 *'A truly fault-tolerant system doesn’t prevent failure — it recovers from it automatically.'* 
-<img width="1915" height="1029" alt="Screenshot 2025-11-03 214216" src="https://github.com/user-attachments/assets/f79d184c-d60a-40c5-ab2a-638f70a16947" />
+<img width="1915" height="1029" alt="Screenshot 2025-11-03 214216" src="https://github.com/user-attachments/assets/f79d184c-d60a-40c5-ab2a-638f70a16947" />.
