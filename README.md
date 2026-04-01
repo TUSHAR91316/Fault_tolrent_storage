@@ -143,11 +143,11 @@ docker ps
 
 ## 📊 Possible Extensions
 
-* Automated Health Checks and Self-Healing
-* Auto-Checkpoint Timer
-* PostgreSQL / Redis Integration
-* File Versioning and Integrity Checks
-* Kubernetes Deployment
+* Automated Health Checks and Self-Healing.
+* Auto-Checkpoint Timer.
+* PostgreSQL / Redis Integration.
+* File Versioning and Integrity Checks.
+* Kubernetes Deployment.
 
 ---
 
