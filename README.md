@@ -133,11 +133,11 @@ docker ps
 
 ## 🧠 Learning Outcomes
 
-* Understanding Fault-Tolerant Distributed Systems
-* Implementing Replication and Recovery Protocols
-* Developing Flask Microservices & REST APIs
-* Deploying Multi-Container Systems with Docker Compose
-* Applying Checkpointing Concepts for Consistency
+* Understanding Fault-Tolerant Distributed Systems.
+* Implementing Replication and Recovery Protocols.
+* Developing Flask Microservices & REST APIs.
+* Deploying Multi-Container Systems with Docker Compose.
+* Applying Checkpointing Concepts for Consistency.
 
 ---
 
