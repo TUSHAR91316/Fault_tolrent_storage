@@ -1,0 +1,636 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>FaultVault — Fault-Tolerant File Storage</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.0/css/all.min.css">
+    <style>
+        *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+        :root {
+            --bg:       #0d0f14;
+            --surface:  #161b27;
+            --card:     #1e2535;
+            --border:   #2a3347;
+            --accent:   #4f8ef7;
+            --accent2:  #7c5cfc;
+            --success:  #22c55e;
+            --warning:  #f59e0b;
+            --danger:   #ef4444;
+            --text:     #e2e8f0;
+            --muted:    #64748b;
+            --radius:   14px;
+        }
+
+        body {
+            font-family: 'Inter', sans-serif;
+            background: var(--bg);
+            color: var(--text);
+            min-height: 100vh;
+        }
+
+        /* ── Header ── */
+        header {
+            background: linear-gradient(135deg, #1a2340 0%, #0f1520 100%);
+            border-bottom: 1px solid var(--border);
+            padding: 18px 32px;
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            position: sticky;
+            top: 0;
+            z-index: 100;
+            backdrop-filter: blur(10px);
+        }
+        .logo {
+            display: flex;
+            align-items: center;
+            gap: 12px;
+            font-size: 1.35rem;
+            font-weight: 700;
+            background: linear-gradient(90deg, var(--accent), var(--accent2));
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+        }
+        .logo i { font-size: 1.5rem; background: linear-gradient(90deg, var(--accent), var(--accent2)); -webkit-background-clip: text; -webkit-text-fill-color: transparent; }
+        .header-meta { font-size: 0.8rem; color: var(--muted); }
+
+        /* ── Layout ── */
+        .container { max-width: 1200px; margin: 0 auto; padding: 32px 24px; }
+
+        /* ── Node Status Bar ── */
+        .nodes-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+            gap: 16px;
+            margin-bottom: 28px;
+        }
+        .node-card {
+            background: var(--card);
+            border: 1px solid var(--border);
+            border-radius: var(--radius);
+            padding: 18px 20px;
+            display: flex;
+            align-items: center;
+            gap: 14px;
+            transition: border-color .2s;
+        }
+        .node-card.online  { border-left: 3px solid var(--success); }
+        .node-card.offline { border-left: 3px solid var(--danger);  }
+        .node-card.unknown { border-left: 3px solid var(--warning); }
+        .node-dot {
+            width: 12px; height: 12px;
+            border-radius: 50%;
+            flex-shrink: 0;
+            animation: pulse 2s infinite;
+        }
+        .node-dot.online  { background: var(--success); box-shadow: 0 0 8px var(--success); }
+        .node-dot.offline { background: var(--danger);  animation: none; }
+        .node-dot.unknown { background: var(--warning); }
+        @keyframes pulse {
+            0%,100% { opacity: 1; }
+            50%      { opacity: 0.4; }
+        }
+        .node-info .name   { font-weight: 600; font-size: .95rem; }
+        .node-info .status { font-size: .78rem; color: var(--muted); margin-top: 2px; text-transform: capitalize; }
+
+        /* ── Cards ── */
+        .card {
+            background: var(--card);
+            border: 1px solid var(--border);
+            border-radius: var(--radius);
+            padding: 28px;
+            margin-bottom: 24px;
+        }
+        .card-title {
+            font-size: 1rem;
+            font-weight: 600;
+            margin-bottom: 20px;
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            color: var(--text);
+        }
+        .card-title i { color: var(--accent); }
+
+        /* ── Upload Zone ── */
+        .upload-zone {
+            border: 2px dashed var(--border);
+            border-radius: 10px;
+            padding: 40px 24px;
+            text-align: center;
+            cursor: pointer;
+            transition: border-color .2s, background .2s;
+            position: relative;
+        }
+        .upload-zone:hover, .upload-zone.drag-over {
+            border-color: var(--accent);
+            background: rgba(79,142,247,.05);
+        }
+        .upload-zone i { font-size: 2.5rem; color: var(--muted); margin-bottom: 12px; display: block; }
+        .upload-zone p { color: var(--muted); font-size: .9rem; }
+        .upload-zone strong { color: var(--accent); }
+        #file-input { position: absolute; inset: 0; opacity: 0; cursor: pointer; }
+
+        .selected-file {
+            margin-top: 14px;
+            padding: 10px 14px;
+            background: rgba(79,142,247,.1);
+            border: 1px solid rgba(79,142,247,.3);
+            border-radius: 8px;
+            font-size: .875rem;
+            display: none;
+            align-items: center;
+            gap: 8px;
+        }
+        .selected-file.show { display: flex; }
+        .selected-file i { color: var(--accent); }
+
+        /* ── Progress Bar ── */
+        .progress-wrap {
+            display: none;
+            margin-top: 16px;
+        }
+        .progress-wrap.show { display: block; }
+        .progress-bar-bg {
+            background: var(--border);
+            border-radius: 99px;
+            height: 6px;
+            overflow: hidden;
+        }
+        .progress-bar-fill {
+            height: 100%;
+            background: linear-gradient(90deg, var(--accent), var(--accent2));
+            border-radius: 99px;
+            width: 0%;
+            transition: width .3s ease;
+        }
+        .progress-label { font-size: .8rem; color: var(--muted); margin-top: 6px; }
+
+        /* ── Buttons ── */
+        .btn {
+            display: inline-flex;
+            align-items: center;
+            gap: 7px;
+            padding: 10px 20px;
+            border-radius: 8px;
+            border: none;
+            font-size: .875rem;
+            font-weight: 500;
+            cursor: pointer;
+            transition: transform .15s, box-shadow .15s, opacity .15s;
+            text-decoration: none;
+        }
+        .btn:hover { transform: translateY(-1px); box-shadow: 0 4px 14px rgba(0,0,0,.3); }
+        .btn:active { transform: translateY(0); }
+        .btn-primary { background: linear-gradient(135deg, var(--accent), var(--accent2)); color: #fff; }
+        .btn-success { background: var(--success); color: #fff; }
+        .btn-warning { background: var(--warning); color: #000; }
+        .btn-danger  { background: var(--danger);  color: #fff; }
+        .btn-ghost   { background: var(--border); color: var(--text); }
+        .btn-sm      { padding: 6px 14px; font-size: .8rem; }
+        .btn:disabled { opacity: .5; cursor: not-allowed; transform: none !important; }
+
+        .actions { display: flex; gap: 12px; flex-wrap: wrap; }
+
+        /* ── Table ── */
+        .table-wrap { overflow-x: auto; }
+        table { width: 100%; border-collapse: collapse; font-size: .875rem; }
+        thead th {
+            padding: 12px 16px;
+            text-align: left;
+            color: var(--muted);
+            font-weight: 500;
+            border-bottom: 1px solid var(--border);
+            white-space: nowrap;
+        }
+        tbody tr {
+            border-bottom: 1px solid rgba(42,51,71,.5);
+            transition: background .15s;
+        }
+        tbody tr:hover { background: rgba(255,255,255,.025); }
+        tbody td { padding: 14px 16px; vertical-align: middle; }
+        .badge {
+            display: inline-flex;
+            align-items: center;
+            gap: 4px;
+            padding: 3px 10px;
+            border-radius: 99px;
+            font-size: .75rem;
+            font-weight: 500;
+        }
+        .badge-blue    { background: rgba(79,142,247,.15); color: #7db3ff; }
+        .badge-purple  { background: rgba(124,92,252,.15); color: #a78bfa; }
+        .badge-green   { background: rgba(34,197,94,.15);  color: #4ade80; }
+        .badge-orange  { background: rgba(245,158,11,.15); color: #fbbf24; }
+        .file-name { font-weight: 500; max-width: 200px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+        .file-id   { font-size: .75rem; color: var(--muted); font-family: monospace; }
+        .checksum  { font-size: .7rem; color: var(--muted); font-family: monospace; }
+
+        .empty-state {
+            text-align: center;
+            padding: 60px 20px;
+            color: var(--muted);
+        }
+        .empty-state i { font-size: 3rem; display: block; margin-bottom: 16px; opacity: .3; }
+
+        /* ── Toast Notifications ── */
+        #toast-container {
+            position: fixed;
+            bottom: 28px;
+            right: 28px;
+            display: flex;
+            flex-direction: column;
+            gap: 10px;
+            z-index: 9999;
+        }
+        .toast {
+            display: flex;
+            align-items: center;
+            gap: 12px;
+            padding: 14px 20px;
+            border-radius: 10px;
+            font-size: .875rem;
+            font-weight: 500;
+            min-width: 280px;
+            max-width: 380px;
+            backdrop-filter: blur(10px);
+            animation: slideIn .3s ease;
+            border: 1px solid;
+        }
+        @keyframes slideIn {
+            from { transform: translateX(100%); opacity: 0; }
+            to   { transform: translateX(0);    opacity: 1; }
+        }
+        @keyframes fadeOut {
+            to { transform: translateX(100%); opacity: 0; }
+        }
+        .toast.success { background: rgba(22,197,94,.15); border-color: rgba(22,197,94,.3); color: #4ade80; }
+        .toast.error   { background: rgba(239,68,68,.15); border-color: rgba(239,68,68,.3);  color: #f87171; }
+        .toast.info    { background: rgba(79,142,247,.15);border-color: rgba(79,142,247,.3); color: #7db3ff; }
+        .toast.warning { background: rgba(245,158,11,.15);border-color: rgba(245,158,11,.3); color: #fbbf24; }
+
+        /* ── Version Modal ── */
+        .modal-overlay {
+            position: fixed; inset: 0;
+            background: rgba(0,0,0,.6);
+            z-index: 200;
+            display: none;
+            align-items: center;
+            justify-content: center;
+        }
+        .modal-overlay.show { display: flex; }
+        .modal {
+            background: var(--card);
+            border: 1px solid var(--border);
+            border-radius: var(--radius);
+            padding: 28px;
+            width: 90%;
+            max-width: 600px;
+            max-height: 80vh;
+            overflow-y: auto;
+        }
+        .modal-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 20px;
+        }
+        .modal-title { font-weight: 600; font-size: 1rem; }
+        .close-btn { background: none; border: none; color: var(--muted); font-size: 1.2rem; cursor: pointer; }
+        .close-btn:hover { color: var(--text); }
+    </style>
+</head>
+<body>
+
+<header>
+    <div class="logo">
+        <i class="fa-solid fa-vault"></i>
+        FaultVault
+    </div>
+    <div class="header-meta">Fault-Tolerant File Storage System · 21CSE479T</div>
+</header>
+
+<div class="container">
+
+    <!-- Node Status -->
+    <div class="nodes-grid" id="nodes-grid">
+        {% for node_url, status in node_status.items() %}
+        {% set node_name = node_url.split('//')[1].split(':')[0] %}
+        <div class="node-card {{ status }}" id="node-{{ node_name }}">
+            <div class="node-dot {{ status }}"></div>
+            <div class="node-info">
+                <div class="name"><i class="fa-solid fa-server" style="font-size:.8rem;margin-right:5px;"></i>{{ node_name }}</div>
+                <div class="status">{{ status }}</div>
+            </div>
+        </div>
+        {% endfor %}
+    </div>
+
+    <!-- Upload Card -->
+    <div class="card">
+        <div class="card-title"><i class="fa-solid fa-cloud-arrow-up"></i> Upload File</div>
+        <div class="upload-zone" id="upload-zone">
+            <input type="file" id="file-input">
+            <i class="fa-regular fa-folder-open"></i>
+            <p>Drag & drop a file here, or <strong>click to browse</strong></p>
+            <p style="margin-top:6px;font-size:.78rem;">Files are replicated to all available nodes automatically</p>
+        </div>
+        <div class="selected-file" id="selected-file">
+            <i class="fa-regular fa-file"></i>
+            <span id="selected-filename">No file</span>
+        </div>
+        <div class="progress-wrap" id="progress-wrap">
+            <div class="progress-bar-bg"><div class="progress-bar-fill" id="progress-bar"></div></div>
+            <div class="progress-label" id="progress-label">Uploading…</div>
+        </div>
+        <div style="margin-top:18px;">
+            <button class="btn btn-primary" id="upload-btn" onclick="uploadFile()" disabled>
+                <i class="fa-solid fa-upload"></i> Upload & Replicate
+            </button>
+        </div>
+    </div>
+
+    <!-- Actions Card -->
+    <div class="card">
+        <div class="card-title"><i class="fa-solid fa-sliders"></i> System Actions</div>
+        <div class="actions">
+            <button class="btn btn-success" onclick="createCheckpoint()">
+                <i class="fa-solid fa-camera"></i> Create Checkpoint
+            </button>
+            <button class="btn btn-warning" onclick="triggerRecovery()">
+                <i class="fa-solid fa-rotate"></i> Trigger Node Recovery
+            </button>
+            <button class="btn btn-ghost" onclick="refreshStatus()">
+                <i class="fa-solid fa-arrows-rotate"></i> Refresh Node Status
+            </button>
+        </div>
+    </div>
+
+    <!-- Files Table -->
+    <div class="card">
+        <div class="card-title"><i class="fa-solid fa-database"></i> Stored Files
+            <span class="badge badge-blue" style="margin-left:8px;">{{ files|length }} files</span>
+        </div>
+        <div class="table-wrap">
+            {% if files %}
+            <table>
+                <thead>
+                    <tr>
+                        <th>Filename</th>
+                        <th>Version</th>
+                        <th>Size</th>
+                        <th>Replicas</th>
+                        <th>Checksum</th>
+                        <th>Uploaded At</th>
+                        <th>Actions</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for file in files %}
+                    {% set replica_count = file['nodes'].split(',')|length %}
+                    <tr>
+                        <td>
+                            <div class="file-name" title="{{ file['filename'] }}">{{ file['filename'] }}</div>
+                            <div class="file-id">{{ file['file_id'][:16] }}…</div>
+                        </td>
+                        <td>
+                            {% if file['is_latest'] %}
+                            <span class="badge badge-green">v{{ file['version'] }} Latest</span>
+                            {% else %}
+                            <span class="badge badge-orange">v{{ file['version'] }}</span>
+                            {% endif %}
+                        </td>
+                        <td>{{ (file['size'] / 1024)|round(1) }} KB</td>
+                        <td>
+                            <span class="badge {% if replica_count >= 3 %}badge-green{% elif replica_count == 2 %}badge-orange{% else %}badge-blue{% endif %}">
+                                <i class="fa-solid fa-copy" style="font-size:.65rem;"></i>
+                                {{ replica_count }}/{{ node_status|length }}
+                            </span>
+                        </td>
+                        <td><div class="checksum" title="{{ file['checksum'] }}">{{ file['checksum'][:12] }}…</div></td>
+                        <td style="color:var(--muted);font-size:.8rem;">{{ file['uploaded_at'] }}</td>
+                        <td>
+                            <div style="display:flex;gap:6px;flex-wrap:wrap;">
+                                <a class="btn btn-primary btn-sm" href="/files/{{ file['file_id'] }}">
+                                    <i class="fa-solid fa-download"></i> Download
+                                </a>
+                                <button class="btn btn-ghost btn-sm" onclick="showVersions('{{ file['file_id'] }}', '{{ file['filename'] }}')">
+                                    <i class="fa-solid fa-clock-rotate-left"></i> History
+                                </button>
+                            </div>
+                        </td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+            {% else %}
+            <div class="empty-state">
+                <i class="fa-regular fa-folder-open"></i>
+                <p>No files uploaded yet. Upload your first file above.</p>
+            </div>
+            {% endif %}
+        </div>
+    </div>
+
+</div>
+
+<!-- Version History Modal -->
+<div class="modal-overlay" id="version-modal">
+    <div class="modal">
+        <div class="modal-header">
+            <div class="modal-title" id="modal-title">Version History</div>
+            <button class="close-btn" onclick="closeModal()"><i class="fa-solid fa-xmark"></i></button>
+        </div>
+        <div id="modal-body"></div>
+    </div>
+</div>
+
+<!-- Toast Container -->
+<div id="toast-container"></div>
+
+<script>
+// ── File Input & Drag-Drop ──────────────────────────────────────────────────
+const fileInput    = document.getElementById('file-input');
+const uploadZone   = document.getElementById('upload-zone');
+const uploadBtn    = document.getElementById('upload-btn');
+const selectedFile = document.getElementById('selected-file');
+const selectedName = document.getElementById('selected-filename');
+let selectedFileObj = null;
+
+fileInput.addEventListener('change', e => {
+    if (e.target.files.length) setFile(e.target.files[0]);
+});
+
+uploadZone.addEventListener('dragover', e => { e.preventDefault(); uploadZone.classList.add('drag-over'); });
+uploadZone.addEventListener('dragleave', () => uploadZone.classList.remove('drag-over'));
+uploadZone.addEventListener('drop', e => {
+    e.preventDefault();
+    uploadZone.classList.remove('drag-over');
+    if (e.dataTransfer.files.length) setFile(e.dataTransfer.files[0]);
+});
+
+function setFile(file) {
+    selectedFileObj = file;
+    selectedName.textContent = `${file.name} (${(file.size / 1024).toFixed(1)} KB)`;
+    selectedFile.classList.add('show');
+    uploadBtn.disabled = false;
+}
+
+// ── Upload with Progress Bar ────────────────────────────────────────────────
+function uploadFile() {
+    if (!selectedFileObj) return;
+    const formData = new FormData();
+    formData.append('file', selectedFileObj);
+
+    const progressWrap = document.getElementById('progress-wrap');
+    const progressBar  = document.getElementById('progress-bar');
+    const progressLbl  = document.getElementById('progress-label');
+    progressWrap.classList.add('show');
+    uploadBtn.disabled = true;
+
+    const xhr = new XMLHttpRequest();
+    xhr.open('POST', '/files');
+
+    xhr.upload.addEventListener('progress', e => {
+        if (e.lengthComputable) {
+            const pct = Math.round((e.loaded / e.total) * 100);
+            progressBar.style.width = pct + '%';
+            progressLbl.textContent = `Uploading… ${pct}%`;
+        }
+    });
+
+    xhr.addEventListener('load', () => {
+        progressBar.style.width = '100%';
+        if (xhr.status === 200) {
+            const res = JSON.parse(xhr.responseText);
+            showToast('success', `✅ "${res.filename}" v${res.version} uploaded to ${res.replicas} replica(s)!`);
+            setTimeout(() => location.reload(), 1200);
+        } else {
+            const err = JSON.parse(xhr.responseText);
+            showToast('error', `Upload failed: ${err.error || xhr.statusText}`);
+            resetUpload();
+        }
+    });
+
+    xhr.addEventListener('error', () => {
+        showToast('error', 'Network error during upload.');
+        resetUpload();
+    });
+
+    xhr.send(formData);
+}
+
+function resetUpload() {
+    document.getElementById('progress-wrap').classList.remove('show');
+    document.getElementById('progress-bar').style.width = '0%';
+    uploadBtn.disabled = false;
+}
+
+// ── System Actions ──────────────────────────────────────────────────────────
+function createCheckpoint() {
+    showToast('info', 'Creating checkpoint on all nodes…');
+    fetch('/checkpoint', { method: 'POST' })
+        .then(r => r.json())
+        .then(data => showToast('success', 'Checkpoint created on all available nodes!'))
+        .catch(() => showToast('error', 'Checkpoint request failed.'));
+}
+
+function triggerRecovery() {
+    const node = prompt('Enter node name to recover (e.g., node2):');
+    if (!node) return;
+    showToast('info', `Starting recovery for ${node}…`);
+    fetch(`/recover/${node}`, { method: 'POST' })
+        .then(r => r.json())
+        .then(data => {
+            if (data.status === 'recovery_started') showToast('success', `Recovery for ${node} started in background!`);
+            else if (data.status === 'already_recovering') showToast('warning', `${node} is already being recovered.`);
+            else showToast('info', JSON.stringify(data));
+        })
+        .catch(() => showToast('error', 'Recovery request failed.'));
+}
+
+// ── Live Node Status Polling ────────────────────────────────────────────────
+function refreshStatus() {
+    fetch('/node-status')
+        .then(r => r.json())
+        .then(data => {
+            Object.entries(data).forEach(([url, status]) => {
+                const name = url.split('//')[1].split(':')[0];
+                const card = document.getElementById(`node-${name}`);
+                if (!card) return;
+                card.className = `node-card ${status}`;
+                const dot = card.querySelector('.node-dot');
+                dot.className = `node-dot ${status}`;
+                card.querySelector('.status').textContent = status;
+            });
+            showToast('info', 'Node status refreshed.');
+        })
+        .catch(() => showToast('error', 'Failed to refresh node status.'));
+}
+
+// Auto-refresh every 15 seconds
+setInterval(refreshStatus, 15000);
+
+// ── Version History Modal ───────────────────────────────────────────────────
+function showVersions(fileId, filename) {
+    document.getElementById('modal-title').textContent = `Version History — ${filename}`;
+    document.getElementById('modal-body').innerHTML = '<p style="color:var(--muted)">Loading…</p>';
+    document.getElementById('version-modal').classList.add('show');
+
+    fetch(`/files/${fileId}/versions`)
+        .then(r => r.json())
+        .then(versions => {
+            if (!versions.length) {
+                document.getElementById('modal-body').innerHTML = '<p style="color:var(--muted)">No versions found.</p>';
+                return;
+            }
+            let html = '<table style="width:100%;font-size:.85rem;border-collapse:collapse;">';
+            html += '<thead><tr style="color:var(--muted);border-bottom:1px solid var(--border);">';
+            html += '<th style="padding:8px;text-align:left">Version</th><th style="padding:8px;text-align:left">Size</th><th style="padding:8px;text-align:left">Uploaded</th><th style="padding:8px;text-align:left">Action</th></tr></thead><tbody>';
+            versions.forEach(v => {
+                const badge = v.is_latest
+                    ? '<span class="badge badge-green">Latest</span>'
+                    : '<span class="badge badge-orange">Old</span>';
+                html += `<tr style="border-bottom:1px solid rgba(42,51,71,.4);">
+                    <td style="padding:10px 8px;">v${v.version} ${badge}</td>
+                    <td style="padding:10px 8px;">${(v.size/1024).toFixed(1)} KB</td>
+                    <td style="padding:10px 8px;color:var(--muted);font-size:.78rem;">${v.uploaded_at}</td>
+                    <td style="padding:10px 8px;"><a class="btn btn-primary btn-sm" href="/files/${v.file_id}"><i class="fa-solid fa-download"></i> Get</a></td>
+                </tr>`;
+            });
+            html += '</tbody></table>';
+            document.getElementById('modal-body').innerHTML = html;
+        })
+        .catch(() => {
+            document.getElementById('modal-body').innerHTML = '<p style="color:var(--danger)">Failed to load versions.</p>';
+        });
+}
+
+function closeModal() {
+    document.getElementById('version-modal').classList.remove('show');
+}
+document.getElementById('version-modal').addEventListener('click', e => {
+    if (e.target === document.getElementById('version-modal')) closeModal();
+});
+
+// ── Toast Notifications ─────────────────────────────────────────────────────
+function showToast(type, message) {
+    const container = document.getElementById('toast-container');
+    const icons = { success: 'fa-circle-check', error: 'fa-circle-xmark', info: 'fa-circle-info', warning: 'fa-triangle-exclamation' };
+    const toast = document.createElement('div');
+    toast.className = `toast ${type}`;
+    toast.innerHTML = `<i class="fa-solid ${icons[type] || 'fa-bell'}"></i><span>${message}</span>`;
+    container.appendChild(toast);
+    setTimeout(() => {
+        toast.style.animation = 'fadeOut .35s ease forwards';
+        setTimeout(() => toast.remove(), 350);
+    }, 4000);
+}
+</script>
+
+</body>
+</html>
