@@ -2,13 +2,19 @@
 
 ### 🧠 Course: 21CSE479T — Fault Tolerant Systems
 ### 👨‍💻 Developed by: Tushar
+
 ---
 
 ## 📖 Overview
 
-The **Fault-Tolerant File Storage System** is a distributed storage architecture designed to ensure **data reliability, high availability, and automatic self-recovery** from node failures.
+The **Fault-Tolerant File Storage System** is a distributed storage solution built to provide **reliable data persistence, high availability, and automatic recovery from node failures**.
 
-This project implements **triple-replication** across multiple storage nodes using **Flask microservices**, utilizes **checkpointing** for persistent metadata, and provides **automatic node recovery**. The entire system is containerized for realistic, isolated deployment using **Docker Compose**.
+This project uses:
+- **Triple replication** across storage nodes
+- **Flask microservices** for service APIs
+- **Checkpointing** for persistent metadata
+- **Automatic re-synchronization** when nodes recover
+- **Docker Compose** for containerized deployment
 
 ---
 
@@ -16,19 +22,18 @@ This project implements **triple-replication** across multiple storage nodes usi
 
 | Feature | Description |
 | :--- | :--- |
-| 🧱 **Triple Replication** | Each uploaded file is redundantly stored on **3 independent storage nodes** to guarantee data persistence. |
-| ⚡ **Fault Tolerance** | The system remains fully operational and data remains accessible even if up to **two nodes fail simultaneously**. |
-| 💾 **Checkpointing** | Nodes periodically save their current state (file data and metadata) to disk, enabling **quick and consistent restoration**. |
-| 🔄 **Automatic Recovery** | A node that rejoins the system automatically **re-syncs missing files** from active replicas to restore its complete dataset. |
-| 🌐 **Web Dashboard** | A user-friendly **Bootstrap UI** to manage file uploads, downloads, and control actions like manual checkpointing and recovery. |
-| 🐳 **Dockerized Deployment** | All components run in isolated **Docker containers** managed by Docker Compose for ease of setup and a realistic distributed environment. |
+| 🧱 **Triple Replication** | Files are redundantly stored on **3 independent storage nodes** for durability. |
+| ⚡ **Fault Tolerance** | The system remains available and accessible even when nodes fail. |
+| 💾 **Checkpointing** | Node state is periodically persisted to disk for fast restoration. |
+| 🔄 **Automatic Recovery** | Recovered nodes fetch missing replicas automatically. |
+| 🌐 **Web Dashboard** | A simple UI for uploads, downloads, checkpointing, and recovery. |
+| 🐳 **Dockerized Deployment** | All services run in isolated containers using Docker Compose. |
 
 ---
 
 ## 🏗️ System Architecture
 
-The system follows a classic **Coordinator-Worker** pattern. The Coordinator handles client requests and metadata, while the Nodes manage file storage and replication.
-
+The architecture follows a **Coordinator-Worker** model. The Coordinator manages metadata and client requests, while Nodes store file replicas and support recovery.
 
 <img width="1024" height="1024" alt="Gemini_Generated_Image_b3ivnzb3ivnzb3iv" src="https://github.com/user-attachments/assets/a6f1f768-2e6a-4544-9bff-1b8dba1a5648" />
 
@@ -36,20 +41,19 @@ The system follows a classic **Coordinator-Worker** pattern. The Coordinator han
 
 ## 🧰 Tech Stack
 
-| Component | Technology | Role |
+| Component | Technology | Purpose |
 | :--- | :--- | :--- |
-| **Language** | Python 3.x | Core implementation logic for all services. |
-| **Microservice Framework** | Flask | Provides the REST API for both Coordinator and Node services. |
-| **Frontend** | HTML + Bootstrap | Simple, functional web dashboard for interaction. |
-| **Containerization** | Docker + Docker Compose | Defines, builds, and runs the multi-container distributed environment. |
-| **Storage** | Local Volumes / JSON Metadata | Persistent storage for files and metadata persistence. |
-| **Communication** | REST APIs | Inter-service communication between Coordinator and Nodes. |
+| Python 3.x | Flask | Core application logic and REST APIs |
+| HTML + Bootstrap | Frontend | Dashboard UI |
+| Docker + Docker Compose | Containerization | Deployment and orchestration |
+| Local volumes + JSON | Storage | File and metadata persistence |
+| REST APIs | Communication | Coordinator-to-node and client connectivity |
 
 ---
 
-## 📂 Folder Structure
+## 📂 Project Structure
 
-```
+```text
 fault_tolerant_storage/
 ├── docker-compose.yml
 ├── README.md
@@ -72,90 +76,90 @@ fault_tolerant_storage/
 
 ## 🚀 Setup Instructions
 
-### 1️⃣ Clone the Repository
+1. Clone the repository:
 
 ```bash
 git clone https://github.com/TUSHAR91316/Fault_tolrent_storage.git
-cd fault_tolerant_storage
+cd fault_tolrent_storage
 ```
 
-### 2️⃣ Build and Run All Services
+2. Build and start the services:
 
 ```bash
 docker compose up --build -d
 ```
 
-### 3️⃣ Verify Running Containers
+3. Confirm the containers are running:
 
 ```bash
 docker ps
 ```
 
-### 4️⃣ Access the Web Dashboard
+4. Open the dashboard:
 
 👉 [http://localhost:5000](http://localhost:5000)
 
 ---
 
-## 🧪 How to Test and Demonstrate Fault Tolerance
+## 🧪 Testing Fault Tolerance
 
-### Step 1: Upload and Replicate
-### Step 2: Simulate Node Failure
-### Step 3: Recover and Re-synchronize
-### Step 4: Create Checkpoint (Optional)
-### Step 5: Stop All Containers
+1. Upload a file through the dashboard.
+2. Stop one or more node containers to simulate failure.
+3. Verify file availability and system metadata.
+4. Restart the failed node(s) and trigger recovery.
+5. Optionally use the checkpoint endpoint to persist state.
 
 ---
 
-## 🧩 Endpoints Summary (for Developers)
+## 🧩 API Reference
 
-### Coordinator API
+### Coordinator Endpoints
 
 | Endpoint | Method | Description |
 | :--- | :--- | :--- |
-| `/` | `GET` | Main Web Dashboard |
-| `/files` | `POST` | Upload a new file |
-| `/files/<file_id>` | `GET` | Download file |
+| `/` | `GET` | Web dashboard |
+| `/files` | `POST` | Upload a file |
+| `/files/<file_id>` | `GET` | Download a file |
 | `/checkpoint` | `POST` | Trigger checkpoint |
-| `/recover/<node_name>` | `POST` | Recover node |
+| `/recover/<node_name>` | `POST` | Recover a node |
 | `/status` | `GET` | Retrieve system metadata |
 
-### Node API
+### Node Endpoints
 
 | Endpoint | Method | Description |
 | :--- | :--- | :--- |
-| `/store` | `POST` | Store a file |
-| `/store/<file_id>` | `GET` | Retrieve a file |
-| `/checkpoint` | `POST` | Create checkpoint |
+| `/store` | `POST` | Store a file replica |
+| `/store/<file_id>` | `GET` | Retrieve a file replica |
+| `/checkpoint` | `POST` | Create a checkpoint |
 | `/health` | `GET` | Health check |
 
 ---
 
 ## 🧠 Learning Outcomes
 
-* Understanding Fault-Tolerant Distributed Systems.
-* Implementing Replication and Recovery Protocols.
-* Developing Flask Microservices & REST APIs.
-* Deploying Multi-Container Systems with Docker Compose.
-* Applying Checkpointing Concepts for Consistency.
+- Understanding fault-tolerant distributed systems
+- Implementing replication and recovery protocols
+- Building Flask microservices and REST APIs
+- Deploying multi-container applications with Docker Compose
+- Applying checkpointing for consistent state recovery
 
 ---
 
 ## 📊 Possible Extensions
 
-* Automated Health Checks and Self-Healing.
-* Auto-Checkpoint Timer.
-* PostgreSQL / Redis Integration.
-* File Versioning and Integrity Checks.
-* Kubernetes Deployment.
+- Automated health checks and self-healing
+- Scheduled checkpointing
+- PostgreSQL or Redis metadata storage
+- File versioning and integrity checks
+- Kubernetes deployment
 
 ---
 
 ## 📜 License
 
-Educational project under **21CSE479T – Fault Tolerant Systems**.
+Educational project for **21CSE479T – Fault Tolerant Systems**.
 
 ---
 
-> 💡 *'A truly fault-tolerant system doesn’t prevent failure — it recovers from it automatically.'* 
+> 💡 *'A truly fault-tolerant system doesn’t prevent failure — it recovers from it automatically.'*
 <img width="1915" height="1029" alt="Screenshot 2025-11-03 214216" src="https://github.com/user-attachments/assets/f79d184c-d60a-40c5-ab2a-638f70a16947" />.
