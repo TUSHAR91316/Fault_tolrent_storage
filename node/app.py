@@ -30,6 +30,7 @@ def get_db():
 def init_db():
     with _db_lock:
         conn = get_db()
+        conn.execute("PRAGMA journal_mode=WAL;")
         conn.executescript('''
             CREATE TABLE IF NOT EXISTS files (
                 file_id     TEXT PRIMARY KEY,
@@ -55,16 +56,22 @@ def store():
     if not file or not file_id:
         return jsonify({'error': 'Missing file or file_id'}), 400
 
-    content  = file.read()
     filename = file.filename
-    size     = len(content)
-
-    # Upgrade 5 — Compute and store SHA256 for integrity verification
-    checksum = hashlib.sha256(content).hexdigest()
-
     filepath = os.path.join(DATA_DIR, f"{file_id}_{filename}")
+
+    # Stream the file to disk in chunks and compute SHA256 simultaneously
+    sha256 = hashlib.sha256()
+    size = 0
     with open(filepath, 'wb') as out:
-        out.write(content)
+        while True:
+            chunk = file.read(65536)  # 64KB chunks
+            if not chunk:
+                break
+            out.write(chunk)
+            sha256.update(chunk)
+            size += len(chunk)
+
+    checksum = sha256.hexdigest()
 
     # Upgrade 4 — Store metadata in SQLite atomically
     with _db_lock:
@@ -96,12 +103,11 @@ def store():
 # ─────────────────────────────────────────────────────────────────────────────
 @app.route('/store/<file_id>', methods=['GET'])
 def retrieve(file_id):
-    with _db_lock:
-        conn = get_db()
-        row  = conn.execute(
-            "SELECT * FROM files WHERE file_id=?", (file_id,)
-        ).fetchone()
-        conn.close()
+    conn = get_db()
+    row  = conn.execute(
+        "SELECT * FROM files WHERE file_id=?", (file_id,)
+    ).fetchone()
+    conn.close()
 
     if not row:
         return jsonify({'error': 'File not found'}), 404
@@ -109,11 +115,13 @@ def retrieve(file_id):
     if not os.path.exists(row['path']):
         return jsonify({'error': 'File missing on disk'}), 503
 
+    # Upgrade 5 — Verify integrity before sending (streaming to save memory)
+    sha256 = hashlib.sha256()
     with open(row['path'], 'rb') as f:
-        content = f.read()
-
-    # Upgrade 5 — Verify integrity before sending
-    actual_checksum = hashlib.sha256(content).hexdigest()
+        while chunk := f.read(65536):
+            sha256.update(chunk)
+            
+    actual_checksum = sha256.hexdigest()
     if actual_checksum != row['checksum']:
         app.logger.error(
             "Integrity failure for %s: expected %s got %s",
@@ -122,7 +130,7 @@ def retrieve(file_id):
         return jsonify({'error': 'File corrupted — checksum mismatch'}), 500
 
     return send_file(
-        BytesIO(content),
+        row['path'],
         download_name=row['filename'],
         as_attachment=True
     )
@@ -137,10 +145,9 @@ def checkpoint():
     timestamp = datetime.utcnow().strftime('%Y%m%d_%H%M%S')
     ckpt_file = os.path.join(DATA_DIR, f"checkpoint_{timestamp}.json")
 
-    with _db_lock:
-        conn = get_db()
-        rows = conn.execute("SELECT * FROM files").fetchall()
-        conn.close()
+    conn = get_db()
+    rows = conn.execute("SELECT * FROM files").fetchall()
+    conn.close()
 
     snapshot = {
         row['file_id']: {
@@ -172,11 +179,10 @@ def health():
 
 @app.route('/stats')
 def stats():
-    with _db_lock:
-        conn  = get_db()
-        count = conn.execute("SELECT COUNT(*) as c FROM files").fetchone()['c']
-        total = conn.execute("SELECT SUM(size) as s FROM files").fetchone()['s'] or 0
-        conn.close()
+    conn  = get_db()
+    count = conn.execute("SELECT COUNT(*) as c FROM files").fetchone()['c']
+    total = conn.execute("SELECT SUM(size) as s FROM files").fetchone()['s'] or 0
+    conn.close()
     return jsonify({'files': count, 'total_bytes': total})
 
 

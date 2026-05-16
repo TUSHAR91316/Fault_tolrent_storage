@@ -26,6 +26,8 @@ This project uses:
 | ⚡ **Fault Tolerance** | The system remains available and accessible even when nodes fail. |
 | 💾 **Checkpointing** | Node state is periodically persisted to disk for fast restoration. |
 | 🔄 **Automatic Recovery** | Recovered nodes fetch missing replicas automatically. |
+| 🚀 **High Concurrency** | SQLite WAL mode allows simultaneous read/write operations without locking. |
+| 🌊 **Memory Safe** | Files are processed via chunked streaming, preventing OOM errors on large files. |
 | 🌐 **Web Dashboard** | A simple UI for uploads, downloads, checkpointing, and recovery. |
 | 🐳 **Dockerized Deployment** | All services run in isolated containers using Docker Compose. |
 

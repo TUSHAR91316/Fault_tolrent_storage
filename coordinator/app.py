@@ -9,7 +9,7 @@ Upgrades implemented:
   6. File Versioning (multiple versions per filename)
 """
 
-from flask import Flask, request, jsonify, render_template, send_file, redirect, url_for
+from flask import Flask, request, jsonify, render_template, send_file, redirect, url_for, Response
 import os, requests, uuid, sqlite3, hashlib, threading, time, logging
 from io import BytesIO
 from datetime import datetime
@@ -45,6 +45,7 @@ def get_db():
 def init_db():
     with _db_lock:
         conn = get_db()
+        conn.execute("PRAGMA journal_mode=WAL;")
         conn.executescript('''
             CREATE TABLE IF NOT EXISTS files (
                 file_id     TEXT NOT NULL,
@@ -77,12 +78,11 @@ def _do_recovery(node_url: str):
     node_name = node_url.split('//')[1].split(':')[0]
     app.logger.info("Auto-recovery started for %s", node_url)
     try:
-        with _db_lock:
-            conn = get_db()
-            rows = conn.execute(
-                "SELECT file_id, filename, nodes FROM files WHERE is_latest=1"
-            ).fetchall()
-            conn.close()
+        conn = get_db()
+        rows = conn.execute(
+            "SELECT file_id, filename, nodes FROM files WHERE is_latest=1"
+        ).fetchall()
+        conn.close()
 
         for row in rows:
             stored_nodes = row['nodes'].split(',')
@@ -92,11 +92,11 @@ def _do_recovery(node_url: str):
                 if donor == node_url:
                     continue
                 try:
-                    r = requests.get(f"{donor}/store/{row['file_id']}", timeout=10)
+                    r = requests.get(f"{donor}/store/{row['file_id']}", timeout=10, stream=True)
                     if r.status_code == 200:
                         pr = requests.post(
                             f"{node_url}/store",
-                            files={'file': (row['filename'], BytesIO(r.content))},
+                            files={'file': (row['filename'], r.raw)},
                             data={'file_id': row['file_id']},
                             timeout=10
                         )
@@ -153,15 +153,16 @@ threading.Thread(target=health_monitor, daemon=True).start()
 # ─────────────────────────────────────────────────────────────────────────────
 # Upgrade 1 — Parallel Replication Helper
 # ─────────────────────────────────────────────────────────────────────────────
-def _store_on_node(node: str, filename: str, content: bytes, file_id: str):
+def _store_on_node(node: str, filename: str, filepath: str, file_id: str):
     """Upload a file to a single node. Returns node URL on success, None on failure."""
     try:
-        r = requests.post(
-            f"{node}/store",
-            files={'file': (filename, BytesIO(content))},
-            data={'file_id': file_id},
-            timeout=8
-        )
+        with open(filepath, 'rb') as f:
+            r = requests.post(
+                f"{node}/store",
+                files={'file': (filename, f)},
+                data={'file_id': file_id},
+                timeout=8
+            )
         return node if r.status_code == 200 else None
     except Exception as e:
         app.logger.warning("Store failed on %s: %s", node, e)
@@ -172,12 +173,11 @@ def _store_on_node(node: str, filename: str, content: bytes, file_id: str):
 # ─────────────────────────────────────────────────────────────────────────────
 @app.route('/')
 def index():
-    with _db_lock:
-        conn = get_db()
-        files = conn.execute(
-            "SELECT * FROM files ORDER BY uploaded_at DESC"
-        ).fetchall()
-        conn.close()
+    conn = get_db()
+    files = conn.execute(
+        "SELECT * FROM files ORDER BY uploaded_at DESC"
+    ).fetchall()
+    conn.close()
 
     with _status_lock:
         statuses = dict(node_status)
@@ -197,11 +197,23 @@ def upload():
         return jsonify({'error': 'No file provided'}), 400
 
     filename = f.filename
-    content  = f.read()
-    size     = len(content)
+    file_id = str(uuid.uuid4())
+    temp_filepath = os.path.join(DATA_DIR, f"temp_{file_id}_{filename}")
+    
+    # Stream to temp file while computing checksum
+    sha256 = hashlib.sha256()
+    size = 0
+    with open(temp_filepath, 'wb') as out:
+        while True:
+            chunk = f.read(65536)
+            if not chunk:
+                break
+            out.write(chunk)
+            sha256.update(chunk)
+            size += len(chunk)
 
     # Upgrade 5 — Compute SHA256 checksum
-    checksum = hashlib.sha256(content).hexdigest()
+    checksum = sha256.hexdigest()
 
     # Upgrade 6 — Determine version number
     with _db_lock:
@@ -220,19 +232,21 @@ def upload():
         conn.commit()
         conn.close()
 
-    file_id = str(uuid.uuid4())
-
     # Upgrade 1 — Parallel replication
     stored_nodes = []
     with ThreadPoolExecutor(max_workers=len(NODES)) as executor:
         futures = {
-            executor.submit(_store_on_node, node, filename, content, file_id): node
+            executor.submit(_store_on_node, node, filename, temp_filepath, file_id): node
             for node in NODES
         }
         for future in as_completed(futures):
             result = future.result()
             if result:
                 stored_nodes.append(result)
+
+    # Clean up temp file
+    if os.path.exists(temp_filepath):
+        os.remove(temp_filepath)
 
     if not stored_nodes:
         return jsonify({'error': 'Failed to store file on any node'}), 500
@@ -267,12 +281,11 @@ def download(file_id):
     """
     Upgrade 5: Verify SHA256 checksum after download.
     """
-    with _db_lock:
-        conn = get_db()
-        row = conn.execute(
-            "SELECT * FROM files WHERE file_id=?", (file_id,)
-        ).fetchone()
-        conn.close()
+    conn = get_db()
+    row = conn.execute(
+        "SELECT * FROM files WHERE file_id=?", (file_id,)
+    ).fetchone()
+    conn.close()
 
     if not row:
         return jsonify({'error': 'File not found'}), 404
@@ -280,20 +293,13 @@ def download(file_id):
     stored_nodes = row['nodes'].split(',')
     for node in stored_nodes:
         try:
-            r = requests.get(f"{node}/store/{file_id}", timeout=8)
+            r = requests.get(f"{node}/store/{file_id}", timeout=8, stream=True)
             if r.status_code == 200:
-                # Upgrade 5 — Verify integrity
-                actual_checksum = hashlib.sha256(r.content).hexdigest()
-                if actual_checksum != row['checksum']:
-                    app.logger.error(
-                        "Checksum mismatch on %s for %s! Expected %s got %s",
-                        node, file_id, row['checksum'], actual_checksum
-                    )
-                    continue  # try next replica
-                return send_file(
-                    BytesIO(r.content),
-                    as_attachment=True,
-                    download_name=row['filename']
+                # Node already verifies integrity. We stream to the client.
+                return Response(
+                    r.iter_content(chunk_size=65536),
+                    headers={'Content-Disposition': f'attachment; filename="{row["filename"]}"'},
+                    content_type='application/octet-stream'
                 )
         except Exception as e:
             app.logger.warning("Fetch failed from %s: %s", node, e)
@@ -304,18 +310,17 @@ def download(file_id):
 @app.route('/files/<file_id>/versions')
 def list_versions(file_id):
     """Upgrade 6: List all versions of a file by its filename."""
-    with _db_lock:
-        conn = get_db()
-        row = conn.execute("SELECT filename FROM files WHERE file_id=?", (file_id,)).fetchone()
-        if not row:
-            conn.close()
-            return jsonify({'error': 'File not found'}), 404
-        versions = conn.execute(
-            "SELECT file_id, filename, version, size, checksum, uploaded_at, is_latest "
-            "FROM files WHERE filename=? ORDER BY version DESC",
-            (row['filename'],)
-        ).fetchall()
+    conn = get_db()
+    row = conn.execute("SELECT filename FROM files WHERE file_id=?", (file_id,)).fetchone()
+    if not row:
         conn.close()
+        return jsonify({'error': 'File not found'}), 404
+    versions = conn.execute(
+        "SELECT file_id, filename, version, size, checksum, uploaded_at, is_latest "
+        "FROM files WHERE filename=? ORDER BY version DESC",
+        (row['filename'],)
+    ).fetchall()
+    conn.close()
 
     return jsonify([dict(v) for v in versions])
 
@@ -354,10 +359,9 @@ def recover_node(node_name):
 
 @app.route('/status')
 def status():
-    with _db_lock:
-        conn = get_db()
-        files = conn.execute("SELECT * FROM files WHERE is_latest=1").fetchall()
-        conn.close()
+    conn = get_db()
+    files = conn.execute("SELECT * FROM files WHERE is_latest=1").fetchall()
+    conn.close()
     with _status_lock:
         statuses = dict(node_status)
     return jsonify({
