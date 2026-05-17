@@ -3,41 +3,45 @@
 ### 🧠 Course: 21CSE479T — Fault Tolerant Systems
 ### 👨‍💻 Developed by: Tushar
 
+[![Python](https://img.shields.io/badge/Python-3.x-blue.svg)](https://python.org)
+[![Flask](https://img.shields.io/badge/Flask-Microframework-black.svg)](https://flask.palletsprojects.com/)
+[![Docker](https://img.shields.io/badge/Docker-Container-2496ED.svg)](https://docker.com)
+[![SQLite](https://img.shields.io/badge/SQLite-Database-003B57.svg)](https://sqlite.org)
+
 ---
 
 ## 📖 Overview
 
-The **Fault-Tolerant File Storage System** is a distributed storage solution built to provide **reliable data persistence, high availability, and automatic recovery from node failures**.
+The **Fault-Tolerant File Storage System** is an advanced, distributed storage solution designed to provide **reliable data persistence, high availability, and automated self-healing** from node failures.
 
-This project uses:
-- **Triple replication** across storage nodes
-- **Flask microservices** for service APIs
-- **Checkpointing** for persistent metadata
-- **Automatic re-synchronization** when nodes recover
-- **Docker Compose** for containerized deployment
+Built on a robust Coordinator-Worker architecture, the system guarantees that your files are securely replicated, versioned, and continuously monitored. It handles concurrent requests gracefully and ensures absolute data integrity using cryptographic hashing.
 
 ---
 
-## ⚙️ Key Features
+## ✨ Advanced Features & Upgrades
+
+This project has been extensively upgraded with enterprise-grade features:
 
 | Feature | Description |
 | :--- | :--- |
-| 🧱 **Triple Replication** | Files are redundantly stored on **3 independent storage nodes** for durability. |
-| ⚡ **Fault Tolerance** | The system remains available and accessible even when nodes fail. |
-| 💾 **Checkpointing** | Node state is periodically persisted to disk for fast restoration. |
-| 🔄 **Automatic Recovery** | Recovered nodes fetch missing replicas automatically. |
-| 🚀 **High Concurrency** | SQLite WAL mode allows simultaneous read/write operations without locking. |
-| 🌊 **Memory Safe** | Files are processed via chunked streaming, preventing OOM errors on large files. |
-| 🌐 **Web Dashboard** | A simple UI for uploads, downloads, checkpointing, and recovery. |
-| 🐳 **Dockerized Deployment** | All services run in isolated containers using Docker Compose. |
+| 🧱 **Triple Replication** | Files are redundantly stored across **3 independent storage nodes**. |
+| ⚡ **Parallel Replication** | Uploads utilize `ThreadPoolExecutor` to stream data to all nodes simultaneously, drastically cutting down latency. |
+| 🩺 **Automated Self-Healing** | A background daemon continuously monitors node health. When a failed node comes back online, the system automatically detects it and syncs missing files from healthy donors. |
+| 🛡️ **Cryptographic Integrity** | On-the-fly **SHA-256 checksum generation** during uploads, and strict chunk-by-chunk verification during downloads to prevent silent data corruption. |
+| 🗄️ **SQLite WAL Metadata** | Replaced JSON files with a thread-safe, atomic SQLite database using Write-Ahead Logging (WAL) for lock-free, high-concurrency read/write operations. |
+| 🗂️ **File Versioning** | Uploading a file with the same name automatically increments its version. Previous versions are safely retained and tracked in the database. |
+| 🌊 **Memory-Safe Streaming** | Employs 64KB chunked streaming for transfers, guaranteeing zero Out-Of-Memory (OOM) errors regardless of file size. |
+| 💾 **Collision-Free Checkpointing** | Timestamp-based snapshotting allows operators to safely persist and audit node states. |
+| 🌐 **Modern Dashboard UI** | A responsive web interface powered by Jinja2 and AJAX, featuring real-time node polling, toast notifications, and progress indicators. |
+| 🐳 **Dockerized Deployment** | Fully containerized environment for instantaneous, reproducible setups. |
 
 ---
 
 ## 🏗️ System Architecture
 
-The architecture follows a **Coordinator-Worker** model. The Coordinator manages metadata and client requests, while Nodes store file replicas and support recovery.
+The architecture follows a **Coordinator-Worker** model. The Coordinator acts as the central gateway, managing metadata, routing client requests, and orchestrating recovery. The Nodes are responsible for the physical storage of data chunks and performing local integrity checks.
 
-<img width="1024" height="1024" alt="Gemini_Generated_Image_b3ivnzb3ivnzb3iv" src="https://github.com/user-attachments/assets/a6f1f768-2e6a-4544-9bff-1b8dba1a5648" />
+<img width="1024" height="1024" alt="Architecture Diagram" src="https://github.com/user-attachments/assets/a6f1f768-2e6a-4544-9bff-1b8dba1a5648" />
 
 ---
 
@@ -45,11 +49,11 @@ The architecture follows a **Coordinator-Worker** model. The Coordinator manages
 
 | Component | Technology | Purpose |
 | :--- | :--- | :--- |
-| Python 3.x | Flask | Core application logic and REST APIs |
-| HTML + Bootstrap | Frontend | Dashboard UI |
-| Docker + Docker Compose | Containerization | Deployment and orchestration |
-| Local volumes + JSON | Storage | File and metadata persistence |
-| REST APIs | Communication | Coordinator-to-node and client connectivity |
+| **Backend Core** | Python 3.x, Flask | Core application logic, routing, and REST APIs |
+| **Concurrency** | `concurrent.futures`, `threading` | Parallel uploading and background health daemons |
+| **Database** | SQLite3 (WAL mode) | Atomic, thread-safe metadata and version tracking |
+| **Frontend** | HTML, Bootstrap, JS (AJAX) | Interactive, real-time dashboard UI |
+| **Infrastructure** | Docker, Docker Compose | Isolated deployment and service orchestration |
 
 ---
 
@@ -57,103 +61,98 @@ The architecture follows a **Coordinator-Worker** model. The Coordinator manages
 
 ```text
 fault_tolerant_storage/
-├── docker-compose.yml
-├── README.md
+├── docker-compose.yml       # Multi-container orchestration
+├── README.md                # Project documentation
 ├── coordinator/
-│   ├── app.py
+│   ├── app.py               # Coordinator logic (routing, monitoring, DB)
 │   ├── Dockerfile
-│   └── requirements.txt
-├── coordinator_data/
-│   └── metadata.json
+│   ├── requirements.txt
+│   └── templates/           # Jinja2 dashboard UI
+├── coordinator_data/        # Persistent volume for coordinator DB
 ├── node/
-│   ├── app.py
+│   ├── app.py               # Storage node logic (storage, checksums, DB)
 │   ├── Dockerfile
 │   └── requirements.txt
-├── node1_data/
-├── node2_data/
-└── node3_data/
+├── node1_data/              # Persistent volume for Node 1
+├── node2_data/              # Persistent volume for Node 2
+└── node3_data/              # Persistent volume for Node 3
 ```
 
 ---
 
-## 🚀 Setup Instructions
+## 🚀 Setup & Deployment
 
-1. Clone the repository:
+1. **Clone the repository:**
+   ```bash
+   git clone https://github.com/TUSHAR91316/Fault_tolrent_storage.git
+   cd fault_tolrent_storage
+   ```
 
-```bash
-git clone https://github.com/TUSHAR91316/Fault_tolrent_storage.git
-cd fault_tolrent_storage
-```
+2. **Build and start the cluster:**
+   ```bash
+   docker compose up --build -d
+   ```
 
-2. Build and start the services:
+3. **Verify running containers:**
+   ```bash
+   docker ps
+   ```
 
-```bash
-docker compose up --build -d
-```
-
-3. Confirm the containers are running:
-
-```bash
-docker ps
-```
-
-4. Open the dashboard:
-
-👉 [http://localhost:5000](http://localhost:5000)
+4. **Access the Dashboard:**
+   👉 [http://localhost:5000](http://localhost:5000)
 
 ---
 
-## 🧪 Testing Fault Tolerance
+## 🧪 Testing the Fault Tolerance
 
-1. Upload a file through the dashboard.
-2. Stop one or more node containers to simulate failure.
-3. Verify file availability and system metadata.
-4. Restart the failed node(s) and trigger recovery.
-5. Optionally use the checkpoint endpoint to persist state.
+1. **Upload Data:** Use the dashboard to upload a file. The system will stream it to all 3 nodes in parallel.
+2. **Simulate a Crash:** Stop one of the nodes manually:
+   ```bash
+   docker stop fault_tolrent_storage-node2-1
+   ```
+3. **Verify Resilience:** Download the file again. The coordinator will seamlessly route the request to a surviving node.
+4. **Trigger Auto-Recovery:** Restart the crashed node:
+   ```bash
+   docker start fault_tolrent_storage-node2-1
+   ```
+   *Watch the terminal logs or the dashboard:* The coordinator's background health monitor will detect the node's return and instantly initiate a background sync to copy missing files from the healthy donors.
+5. **Data Integrity:** Manually modify a file directly on a node's disk. Try to download it. The SHA-256 validation will catch the corruption and fallback to a healthy replica!
 
 ---
 
-## 🧩 API Reference
+## 🧩 Core API Reference
 
-### Coordinator Endpoints
+### 👑 Coordinator Endpoints
 
 | Endpoint | Method | Description |
 | :--- | :--- | :--- |
-| `/` | `GET` | Web dashboard |
-| `/files` | `POST` | Upload a file |
-| `/files/<file_id>` | `GET` | Download a file |
-| `/checkpoint` | `POST` | Trigger checkpoint |
-| `/recover/<node_name>` | `POST` | Recover a node |
-| `/status` | `GET` | Retrieve system metadata |
+| `/` | `GET` | Main Web Dashboard |
+| `/files` | `POST` | Upload a file (triggers parallel replication) |
+| `/files/<id>` | `GET` | Download the latest version of a file |
+| `/files/<id>/versions` | `GET` | List all historical versions of a file |
+| `/checkpoint` | `POST` | Trigger timestamped checkpoint across all nodes |
+| `/status` | `GET` | Detailed metadata and node cluster status |
+| `/node-status` | `GET` | Lightweight polling endpoint for UI updates |
 
-### Node Endpoints
+### 📦 Node Endpoints
 
 | Endpoint | Method | Description |
 | :--- | :--- | :--- |
-| `/store` | `POST` | Store a file replica |
-| `/store/<file_id>` | `GET` | Retrieve a file replica |
-| `/checkpoint` | `POST` | Create a checkpoint |
-| `/health` | `GET` | Health check |
+| `/store` | `POST` | Receive and stream chunked file to disk |
+| `/store/<id>` | `GET` | Verify SHA-256 integrity and stream file to client |
+| `/checkpoint` | `POST` | Snapshot local SQLite database state |
+| `/health` | `GET` | Ping endpoint for the Coordinator's health monitor |
+| `/stats` | `GET` | Storage usage statistics |
 
 ---
 
 ## 🧠 Learning Outcomes
 
-- Understanding fault-tolerant distributed systems
-- Implementing replication and recovery protocols
-- Building Flask microservices and REST APIs
-- Deploying multi-container applications with Docker Compose
-- Applying checkpointing for consistent state recovery
-
----
-
-## 📊 Possible Extensions
-
-- Automated health checks and self-healing
-- Scheduled checkpointing
-- PostgreSQL or Redis metadata storage
-- File versioning and integrity checks
-- Kubernetes deployment
+- Designing and building **Fault-Tolerant Distributed Systems**.
+- Implementing **Automated Self-Healing** and cluster monitoring algorithms.
+- Handling **Concurrency & Race Conditions** using `threading`, `ThreadPoolExecutor`, and `SQLite WAL`.
+- Ensuring data reliability via **Cryptographic Integrity (SHA-256)**.
+- Orchestrating multi-container networks using **Docker Compose**.
 
 ---
 
@@ -163,5 +162,6 @@ Educational project for **21CSE479T – Fault Tolerant Systems**.
 
 ---
 
-> 💡 *'A truly fault-tolerant system doesn’t prevent failure — it recovers from it automatically.'*
-<img width="1915" height="1029" alt="Screenshot 2025-11-03 214216" src="https://github.com/user-attachments/assets/f79d184c-d60a-40c5-ab2a-638f70a16947" />.
+> 💡 *'A truly fault-tolerant system doesn’t just prevent failure — it anticipates it, survives it, and heals from it automatically.'*
+
+<img width="1915" height="1029" alt="Dashboard Screenshot" src="https://github.com/user-attachments/assets/f79d184c-d60a-40c5-ab2a-638f70a16947" />
