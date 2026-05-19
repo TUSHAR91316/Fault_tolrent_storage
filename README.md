@@ -162,6 +162,6 @@ Educational project for **21CSE479T – Fault Tolerant Systems**.
 
 ---
 
-> 💡 *'A truly fault-tolerant system doesn’t just prevent failure — it anticipates it, survives it, and heals from it automatically.'*
+> 💡 *'A truly fault-tolerant system doesn’t just prevent failure — it anticipates it, survives it, and heals from it automatically'*
 
 <img width="1915" height="1029" alt="Dashboard Screenshot" src="https://github.com/user-attachments/assets/f79d184c-d60a-40c5-ab2a-638f70a16947" />
