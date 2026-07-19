@@ -1,4 +1,4 @@
-# 💾 Fault-Tolerant File Storage System
+# 💾 Fault-Tolerant & AI-Secure Distributed Storage System
 
 ### 🧠 Course: 21CSE479T — Fault Tolerant Systems
 ### 👨‍💻 Developed by: Tushar
@@ -6,54 +6,69 @@
 [![Python](https://img.shields.io/badge/Python-3.x-blue.svg)](https://python.org)
 [![Flask](https://img.shields.io/badge/Flask-Microframework-black.svg)](https://flask.palletsprojects.com/)
 [![Docker](https://img.shields.io/badge/Docker-Container-2496ED.svg)](https://docker.com)
-[![SQLite](https://img.shields.io/badge/SQLite-Database-003B57.svg)](https://sqlite.org)
+[![Redis](https://img.shields.io/badge/Redis-Cache--Broker-DC382D.svg)](https://redis.io)
+[![scikit-learn](https://img.shields.io/badge/scikit--learn-ML--Framework-F7931E.svg)](https://scikit-learn.org)
 
 ---
 
 ## 📖 Overview
 
-The **Fault-Tolerant File Storage System** is an advanced, distributed storage solution designed to provide **reliable data persistence, high availability, and automated self-healing** from node failures.
+The **Fault-Tolerant & AI-Secure File Storage System** is a distributed storage solution designed to provide **reliable data persistence, high availability, automated self-healing, and real-time intelligent threat mitigation**. 
 
-Built on a robust Coordinator-Worker architecture, the system guarantees that your files are securely replicated, versioned, and continuously monitored. It handles concurrent requests gracefully and ensures absolute data integrity using cryptographic hashing.
+Built on a robust Coordinator-Worker architecture and augmented by an asynchronous **AI-Analyzer** service communicating via **Redis**, the system guarantees secure replication, load-balanced routing, predictive failure detection, and active defense boundaries.
 
 ---
 
 ## ✨ Advanced Features & Upgrades
 
-This project has been extensively upgraded with enterprise-grade features:
-
 | Feature | Description |
 | :--- | :--- |
 | 🧱 **Triple Replication** | Files are redundantly stored across **3 independent storage nodes**. |
 | ⚡ **Parallel Replication** | Uploads utilize `ThreadPoolExecutor` to stream data to all nodes simultaneously, drastically cutting down latency. |
-| 🩺 **Automated Self-Healing** | A background daemon continuously monitors node health. When a failed node comes back online, the system automatically detects it and syncs missing files from healthy donors. |
-| 🛡️ **Cryptographic Integrity** | On-the-fly **SHA-256 checksum generation** during uploads, and strict chunk-by-chunk verification during downloads to prevent silent data corruption. |
-| 🗄️ **SQLite WAL Metadata** | Replaced JSON files with a thread-safe, atomic SQLite database using Write-Ahead Logging (WAL) for lock-free, high-concurrency read/write operations. |
-| 🗂️ **File Versioning** | Uploading a file with the same name automatically increments its version. Previous versions are safely retained and tracked in the database. |
-| 🌊 **Memory-Safe Streaming** | Employs 64KB chunked streaming for transfers, guaranteeing zero Out-Of-Memory (OOM) errors regardless of file size. |
-| 💾 **Collision-Free Checkpointing** | Timestamp-based snapshotting allows operators to safely persist and audit node states. |
-| 🌐 **Modern Dashboard UI** | A responsive web interface powered by Jinja2 and AJAX, featuring real-time node polling, toast notifications, and progress indicators. |
-| 🐳 **Dockerized Deployment** | Fully containerized environment for instantaneous, reproducible setups. |
+| 🩺 **Automated Self-Healing** | A background daemon continuously monitors node health. If a node fails and recovers, the coordinator automatically syncs missing files from donor replicas. |
+| 🧠 **Predictive Node Failure** | The AI service uses an **Isolation Forest** model to detect anomalous resource usage, marking nodes as *degraded* and routing traffic away *before* a crash. |
+| ⚖️ **Intelligent Load Balancing** | A **Linear Regression** model predicts retrieval latency for each node based on real-time CPU/RAM load. Reads are routed to the node predicted to respond fastest. |
+| 🚀 **RAM-Hot Data Tiering** | Identifies frequently requested files and caches them in high-speed RAM. Retrieval skips simulated disk seek latency (0.05s) for instant delivery. |
+| 🛡️ **Dual-Layer Active Defense** | Enforces instant threat mitigation: blacklists malicious uploads via a char-level **Naive Bayes** classifier, and blacklists client IPs triggering volumetric access anomalies. |
+| 🗄️ **SQLite WAL Metadata** | Thread-safe, atomic SQLite databases using Write-Ahead Logging (WAL) for lock-free, high-concurrency read/write operations. |
+| 🗂️ **File Versioning** | Bumps the version integer automatically when files with duplicate names are uploaded, retaining historical records. |
+| 🌊 **Memory-Safe Streaming** | Employs 64KB chunked streaming for transfers, guaranteeing zero Out-Of-Memory (OOM) errors. |
+| 🌐 **Modern Security Dashboard** | A dark-themed responsive dashboard displaying real-time node health, live AI logs, blacklisted clients, quarantined files, and throughput telemetry. |
 
 ---
 
 ## 🏗️ System Architecture
 
-The architecture follows a **Coordinator-Worker** model. The Coordinator acts as the central gateway, managing metadata, routing client requests, and orchestrating recovery. The Nodes are responsible for the physical storage of data chunks and performing local integrity checks.
+The cluster consists of a Coordinator, three Storage Workers, a Redis message broker/state store, and a dedicated AI-Analyzer container:
 
-<img width="1024" height="1024" alt="Architecture Diagram" src="https://github.com/user-attachments/assets/a6f1f768-2e6a-4544-9bff-1b8dba1a5648" />
-
----
-
-## 🧰 Tech Stack
-
-| Component | Technology | Purpose |
-| :--- | :--- | :--- |
-| **Backend Core** | Python 3.x, Flask | Core application logic, routing, and REST APIs |
-| **Concurrency** | `concurrent.futures`, `threading` | Parallel uploading and background health daemons |
-| **Database** | SQLite3 (WAL mode) | Atomic, thread-safe metadata and version tracking |
-| **Frontend** | HTML, Bootstrap, JS (AJAX) | Interactive, real-time dashboard UI |
-| **Infrastructure** | Docker, Docker Compose | Isolated deployment and service orchestration |
+```text
+                     ┌──────────────────┐
+                     │  Client Browser  │
+                     └────────┬─────────┘
+                              │ (HTTP Requests)
+                              ▼
+                     ┌──────────────────┐
+                     │   Coordinator    │
+                     └────────┬─────────┘
+         ┌────────────────────┼────────────────────┐
+         │ (HTTP Store/Get)   │ (HTTP Store/Get)   │ (HTTP Store/Get)
+         ▼                    ▼                    ▼
+   ┌───────────┐        ┌───────────┐        ┌───────────┐
+   │  Node 1   │        │  Node 2   │        │  Node 3   │
+   └─────┬─────┘        └─────┬─────┘        └─────┬─────┘
+         │                    │                    │
+         └──────────┐         │         ┌──────────┘
+                    │         │         │ (Publishes Telemetry & Events)
+                    ▼         ▼         ▼
+               ┌─────────────────────────────┐
+               │    Redis Message Broker     │
+               └──────────────┬──────────────┘
+                              │ (Subscribes to Events)
+                              ▼
+               ┌─────────────────────────────┐
+               │     AI-Analyzer Daemon      │
+               └─────────────────────────────┘
+```
 
 ---
 
@@ -61,21 +76,23 @@ The architecture follows a **Coordinator-Worker** model. The Coordinator acts as
 
 ```text
 fault_tolerant_storage/
-├── docker-compose.yml       # Multi-container orchestration
+├── docker-compose.yml       # Multi-container orchestration (adds redis & ai-analyzer)
 ├── README.md                # Project documentation
-├── coordinator/
-│   ├── app.py               # Coordinator logic (routing, monitoring, DB)
+├── ai/
 │   ├── Dockerfile
 │   ├── requirements.txt
-│   └── templates/           # Jinja2 dashboard UI
-├── coordinator_data/        # Persistent volume for coordinator DB
+│   ├── models.py            # ML model definitions (Failure, Latency, Content, Volumetric)
+│   ├── analyzer.py          # Redis Pub/Sub subscriber & Flask status diagnostic server
+│   └── README.md            # Detailed AI subsystem guide
+├── coordinator/
+│   ├── app.py               # Coordinator routing, SQLite storage, Redis security calls
+│   ├── Dockerfile
+│   ├── requirements.txt
+│   └── templates/           # Real-time Security Dashboard UI
 ├── node/
-│   ├── app.py               # Storage node logic (storage, checksums, DB)
+│   ├── app.py               # Node storage logic, RAM hot-cache, telemetry streaming
 │   ├── Dockerfile
 │   └── requirements.txt
-├── node1_data/              # Persistent volume for Node 1
-├── node2_data/              # Persistent volume for Node 2
-└── node3_data/              # Persistent volume for Node 3
 ```
 
 ---
@@ -97,71 +114,31 @@ fault_tolerant_storage/
    ```bash
    docker ps
    ```
+   You should see 6 containers running: `coordinator`, `node1`, `node2`, `node3`, `redis`, and `ai-analyzer`.
 
 4. **Access the Dashboard:**
-   👉 [http://localhost:5000](http://localhost:5000)
+   👉 Main Web Dashboard: [http://localhost:5000](http://localhost:5000)
+   👉 AI Diagnostics Panel: [http://localhost:5200/status](http://localhost:5200/status)
 
 ---
 
-## 🧪 Testing the Fault Tolerance
+## 🧪 Testing AI & Fault Tolerance
 
-1. **Upload Data:** Use the dashboard to upload a file. The system will stream it to all 3 nodes in parallel.
-2. **Simulate a Crash:** Stop one of the nodes manually:
-   ```bash
-   docker stop fault_tolrent_storage-node2-1
-   ```
-3. **Verify Resilience:** Download the file again. The coordinator will seamlessly route the request to a surviving node.
-4. **Trigger Auto-Recovery:** Restart the crashed node:
-   ```bash
-   docker start fault_tolrent_storage-node2-1
-   ```
-   *Watch the terminal logs or the dashboard:* The coordinator's background health monitor will detect the node's return and instantly initiate a background sync to copy missing files from the healthy donors.
-5. **Data Integrity:** Manually modify a file directly on a node's disk. Try to download it. The SHA-256 validation will catch the corruption and fallback to a healthy replica!
+### 1. Verification of Active Defense (Malware Quarantine)
+- Create a text file containing the pattern `SUSPICIOUS_PATTERN_TYPE_X_PAYLOAD`.
+- Attempt to upload it via the dashboard.
+- The upload is intercepted by the Naive Bayes classifier, blocked, and quarantined. You will see a security alert appear instantly on the dashboard under **AI Security & Active Defense**!
 
----
+### 2. Verification of Active Defense (IP Blacklisting)
+- Download a file rapidly (more than 15 requests in 10 seconds).
+- The AI-Analyzer flags the access anomaly and blacklists the client's IP in Redis.
+- Subsequent requests from the client return a `403 Forbidden` error. Click **Clear Blocks** on the dashboard to unban the IP.
 
-## 🧩 Core API Reference
+### 3. Verification of Intelligent RAM Hot-Tiering
+- Upload a file and download it once. The first retrieve takes ~50ms (simulated disk seek).
+- Download it a few more times. Once the access count increments, the node promotes the file to RAM cache.
+- Observe the download latency. Retrieve operations drop to <2ms, and the card's estimated latency indicator shifts.
 
-### 👑 Coordinator Endpoints
-
-| Endpoint | Method | Description |
-| :--- | :--- | :--- |
-| `/` | `GET` | Main Web Dashboard |
-| `/files` | `POST` | Upload a file (triggers parallel replication) |
-| `/files/<id>` | `GET` | Download the latest version of a file |
-| `/files/<id>/versions` | `GET` | List all historical versions of a file |
-| `/checkpoint` | `POST` | Trigger timestamped checkpoint across all nodes |
-| `/status` | `GET` | Detailed metadata and node cluster status |
-| `/node-status` | `GET` | Lightweight polling endpoint for UI updates |
-
-### 📦 Node Endpoints
-
-| Endpoint | Method | Description |
-| :--- | :--- | :--- |
-| `/store` | `POST` | Receive and stream chunked file to disk |
-| `/store/<id>` | `GET` | Verify SHA-256 integrity and stream file to client |
-| `/checkpoint` | `POST` | Snapshot local SQLite database state |
-| `/health` | `GET` | Ping endpoint for the Coordinator's health monitor |
-| `/stats` | `GET` | Storage usage statistics |
-
----
-
-## 🧠 Learning Outcomes
-
-- Designing and building **Fault-Tolerant Distributed Systems**.
-- Implementing **Automated Self-Healing** and cluster monitoring algorithms.
-- Handling **Concurrency & Race Conditions** using `threading`, `ThreadPoolExecutor`, and `SQLite WAL`.
-- Ensuring data reliability via **Cryptographic Integrity (SHA-256)**.
-- Orchestrating multi-container networks using **Docker Compose**.
-
----
-
-## 📜 License
-
-Educational project for **21CSE479T – Fault Tolerant Systems**.
-
----
-
-> 💡 *'A truly fault-tolerant system doesn’t just prevent failure — it anticipates it, survives it, and heals from it automatically'*
-
-<img width="1915" height="1029" alt="Dashboard Screenshot" src="https://github.com/user-attachments/assets/f79d184c-d60a-40c5-ab2a-638f70a16947" />
+### 4. Verification of Predictive Node Failure
+- Stop a node manually: `docker stop fault_tolrent_storage-node2-1`.
+- Restart the node. As it restarts, monitor the logs or the diagnostic status. If the resources behave anomalously during boots, the Isolation Forest alerts the coordinator, marking it as degraded.

@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>FaultVault — Fault-Tolerant File Storage</title>
+    <title>FaultVault — Fault-Tolerant & AI-Secure Storage</title>
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.0/css/all.min.css">
@@ -11,14 +11,14 @@
         *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
 
         :root {
-            --bg:       #0d0f14;
-            --surface:  #161b27;
-            --card:     #1e2535;
-            --border:   #2a3347;
+            --bg:       #080a10;
+            --surface:  #0f131f;
+            --card:     #141929;
+            --border:   #232b40;
             --accent:   #4f8ef7;
             --accent2:  #7c5cfc;
             --success:  #22c55e;
-            --warning:  #f59e0b;
+            --warning:  #eab308;
             --danger:   #ef4444;
             --text:     #e2e8f0;
             --muted:    #64748b;
@@ -34,7 +34,7 @@
 
         /* ── Header ── */
         header {
-            background: linear-gradient(135deg, #1a2340 0%, #0f1520 100%);
+            background: linear-gradient(135deg, #10162b 0%, #060914 100%);
             border-bottom: 1px solid var(--border);
             padding: 18px 32px;
             display: flex;
@@ -53,13 +53,26 @@
             font-weight: 700;
             background: linear-gradient(90deg, var(--accent), var(--accent2));
             -webkit-background-clip: text;
+            background-clip: text;
             -webkit-text-fill-color: transparent;
         }
-        .logo i { font-size: 1.5rem; background: linear-gradient(90deg, var(--accent), var(--accent2)); -webkit-background-clip: text; -webkit-text-fill-color: transparent; }
+        .logo i { font-size: 1.5rem; background: linear-gradient(90deg, var(--accent), var(--accent2)); -webkit-background-clip: text; background-clip: text; -webkit-text-fill-color: transparent; }
         .header-meta { font-size: 0.8rem; color: var(--muted); }
 
         /* ── Layout ── */
         .container { max-width: 1200px; margin: 0 auto; padding: 32px 24px; }
+
+        /* ── Two Column Grid ── */
+        .dashboard-grid {
+            display: grid;
+            grid-template-columns: 2fr 1fr;
+            gap: 24px;
+            margin-top: 10px;
+        }
+
+        @media (max-width: 992px) {
+            .dashboard-grid { grid-template-columns: 1fr; }
+        }
 
         /* ── Node Status Bar ── */
         .nodes-grid {
@@ -78,9 +91,11 @@
             gap: 14px;
             transition: border-color .2s;
         }
-        .node-card.online  { border-left: 3px solid var(--success); }
-        .node-card.offline { border-left: 3px solid var(--danger);  }
-        .node-card.unknown { border-left: 3px solid var(--warning); }
+        .node-card.online  { border-left: 4px solid var(--success); }
+        .node-card.offline { border-left: 4px solid var(--danger);  }
+        .node-card.degraded { border-left: 4px solid var(--warning); }
+        .node-card.unknown { border-left: 4px solid var(--muted); }
+        
         .node-dot {
             width: 12px; height: 12px;
             border-radius: 50%;
@@ -89,7 +104,9 @@
         }
         .node-dot.online  { background: var(--success); box-shadow: 0 0 8px var(--success); }
         .node-dot.offline { background: var(--danger);  animation: none; }
-        .node-dot.unknown { background: var(--warning); }
+        .node-dot.degraded { background: var(--warning); box-shadow: 0 0 8px var(--warning); }
+        .node-dot.unknown { background: var(--muted); }
+        
         @keyframes pulse {
             0%,100% { opacity: 1; }
             50%      { opacity: 0.4; }
@@ -102,7 +119,7 @@
             background: var(--card);
             border: 1px solid var(--border);
             border-radius: var(--radius);
-            padding: 28px;
+            padding: 24px;
             margin-bottom: 24px;
         }
         .card-title {
@@ -111,8 +128,16 @@
             margin-bottom: 20px;
             display: flex;
             align-items: center;
+            justify-content: space-between;
             gap: 8px;
             color: var(--text);
+            border-bottom: 1px solid rgba(255,255,255,0.05);
+            padding-bottom: 12px;
+        }
+        .card-title-left {
+            display: flex;
+            align-items: center;
+            gap: 8px;
         }
         .card-title i { color: var(--accent); }
 
@@ -120,7 +145,7 @@
         .upload-zone {
             border: 2px dashed var(--border);
             border-radius: 10px;
-            padding: 40px 24px;
+            padding: 32px 24px;
             text-align: center;
             cursor: pointer;
             transition: border-color .2s, background .2s;
@@ -128,9 +153,9 @@
         }
         .upload-zone:hover, .upload-zone.drag-over {
             border-color: var(--accent);
-            background: rgba(79,142,247,.05);
+            background: rgba(79,142,247,.03);
         }
-        .upload-zone i { font-size: 2.5rem; color: var(--muted); margin-bottom: 12px; display: block; }
+        .upload-zone i { font-size: 2.2rem; color: var(--muted); margin-bottom: 12px; display: block; }
         .upload-zone p { color: var(--muted); font-size: .9rem; }
         .upload-zone strong { color: var(--accent); }
         #file-input { position: absolute; inset: 0; opacity: 0; cursor: pointer; }
@@ -139,7 +164,7 @@
             margin-top: 14px;
             padding: 10px 14px;
             background: rgba(79,142,247,.1);
-            border: 1px solid rgba(79,142,247,.3);
+            border: 1px solid rgba(79,142,247,.2);
             border-radius: 8px;
             font-size: .875rem;
             display: none;
@@ -175,7 +200,7 @@
             display: inline-flex;
             align-items: center;
             gap: 7px;
-            padding: 10px 20px;
+            padding: 10px 18px;
             border-radius: 8px;
             border: none;
             font-size: .875rem;
@@ -184,17 +209,17 @@
             transition: transform .15s, box-shadow .15s, opacity .15s;
             text-decoration: none;
         }
-        .btn:hover { transform: translateY(-1px); box-shadow: 0 4px 14px rgba(0,0,0,.3); }
+        .btn:hover { transform: translateY(-1px); box-shadow: 0 4px 12px rgba(0,0,0,.2); }
         .btn:active { transform: translateY(0); }
         .btn-primary { background: linear-gradient(135deg, var(--accent), var(--accent2)); color: #fff; }
         .btn-success { background: var(--success); color: #fff; }
         .btn-warning { background: var(--warning); color: #000; }
         .btn-danger  { background: var(--danger);  color: #fff; }
         .btn-ghost   { background: var(--border); color: var(--text); }
-        .btn-sm      { padding: 6px 14px; font-size: .8rem; }
+        .btn-sm      { padding: 6px 12px; font-size: .8rem; }
         .btn:disabled { opacity: .5; cursor: not-allowed; transform: none !important; }
 
-        .actions { display: flex; gap: 12px; flex-wrap: wrap; }
+        .actions { display: flex; gap: 10px; flex-wrap: wrap; }
 
         /* ── Table ── */
         .table-wrap { overflow-x: auto; }
@@ -208,34 +233,66 @@
             white-space: nowrap;
         }
         tbody tr {
-            border-bottom: 1px solid rgba(42,51,71,.5);
+            border-bottom: 1px solid rgba(42,51,71,.3);
             transition: background .15s;
         }
-        tbody tr:hover { background: rgba(255,255,255,.025); }
-        tbody td { padding: 14px 16px; vertical-align: middle; }
+        tbody tr:hover { background: rgba(255,255,255,.015); }
+        tbody td { padding: 12px 16px; vertical-align: middle; }
         .badge {
             display: inline-flex;
             align-items: center;
             gap: 4px;
-            padding: 3px 10px;
+            padding: 3px 8px;
             border-radius: 99px;
-            font-size: .75rem;
+            font-size: .72rem;
             font-weight: 500;
         }
         .badge-blue    { background: rgba(79,142,247,.15); color: #7db3ff; }
         .badge-purple  { background: rgba(124,92,252,.15); color: #a78bfa; }
         .badge-green   { background: rgba(34,197,94,.15);  color: #4ade80; }
         .badge-orange  { background: rgba(245,158,11,.15); color: #fbbf24; }
-        .file-name { font-weight: 500; max-width: 200px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+        .file-name { font-weight: 500; max-width: 180px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
         .file-id   { font-size: .75rem; color: var(--muted); font-family: monospace; }
         .checksum  { font-size: .7rem; color: var(--muted); font-family: monospace; }
 
         .empty-state {
             text-align: center;
-            padding: 60px 20px;
+            padding: 40px 20px;
             color: var(--muted);
         }
-        .empty-state i { font-size: 3rem; display: block; margin-bottom: 16px; opacity: .3; }
+        .empty-state i { font-size: 2.5rem; display: block; margin-bottom: 12px; opacity: .3; }
+
+        /* ── AI Sidecard Elements ── */
+        .ai-status-row {
+            margin-bottom: 16px;
+        }
+        .ai-status-label {
+            font-size: 0.8rem;
+            color: var(--muted);
+            margin-bottom: 6px;
+            text-transform: uppercase;
+            font-weight: 600;
+            letter-spacing: 0.05em;
+        }
+        .ai-status-content {
+            background: rgba(255, 255, 255, 0.02);
+            border: 1px solid var(--border);
+            border-radius: 8px;
+            padding: 12px;
+            min-height: 40px;
+            display: flex;
+            flex-wrap: wrap;
+            gap: 6px;
+            align-items: center;
+        }
+        .alerts-feed-container {
+            border: 1px solid var(--border);
+            background: rgba(0, 0, 0, 0.15);
+            border-radius: 8px;
+            padding: 12px;
+            max-height: 250px;
+            overflow-y: auto;
+        }
 
         /* ── Toast Notifications ── */
         #toast-container {
@@ -311,12 +368,12 @@
         <i class="fa-solid fa-vault"></i>
         FaultVault
     </div>
-    <div class="header-meta">Fault-Tolerant File Storage System · 21CSE479T</div>
+    <div class="header-meta">Fault-Tolerant & AI-Secure File System · 21CSE479T</div>
 </header>
 
 <div class="container">
 
-    <!-- Node Status -->
+    <!-- Node Status Grid -->
     <div class="nodes-grid" id="nodes-grid">
         {% for node_url, status in node_status.items() %}
         {% set node_name = node_url.split('//')[1].split(':')[0] %}
@@ -330,110 +387,166 @@
         {% endfor %}
     </div>
 
-    <!-- Upload Card -->
-    <div class="card">
-        <div class="card-title"><i class="fa-solid fa-cloud-arrow-up"></i> Upload File</div>
-        <div class="upload-zone" id="upload-zone">
-            <input type="file" id="file-input">
-            <i class="fa-regular fa-folder-open"></i>
-            <p>Drag & drop a file here, or <strong>click to browse</strong></p>
-            <p style="margin-top:6px;font-size:.78rem;">Files are replicated to all available nodes automatically</p>
-        </div>
-        <div class="selected-file" id="selected-file">
-            <i class="fa-regular fa-file"></i>
-            <span id="selected-filename">No file</span>
-        </div>
-        <div class="progress-wrap" id="progress-wrap">
-            <div class="progress-bar-bg"><div class="progress-bar-fill" id="progress-bar"></div></div>
-            <div class="progress-label" id="progress-label">Uploading…</div>
-        </div>
-        <div style="margin-top:18px;">
-            <button class="btn btn-primary" id="upload-btn" onclick="uploadFile()" disabled>
-                <i class="fa-solid fa-upload"></i> Upload & Replicate
-            </button>
-        </div>
-    </div>
-
-    <!-- Actions Card -->
-    <div class="card">
-        <div class="card-title"><i class="fa-solid fa-sliders"></i> System Actions</div>
-        <div class="actions">
-            <button class="btn btn-success" onclick="createCheckpoint()">
-                <i class="fa-solid fa-camera"></i> Create Checkpoint
-            </button>
-            <button class="btn btn-warning" onclick="triggerRecovery()">
-                <i class="fa-solid fa-rotate"></i> Trigger Node Recovery
-            </button>
-            <button class="btn btn-ghost" onclick="refreshStatus()">
-                <i class="fa-solid fa-arrows-rotate"></i> Refresh Node Status
-            </button>
-        </div>
-    </div>
-
-    <!-- Files Table -->
-    <div class="card">
-        <div class="card-title"><i class="fa-solid fa-database"></i> Stored Files
-            <span class="badge badge-blue" style="margin-left:8px;">{{ files|length }} files</span>
-        </div>
-        <div class="table-wrap">
-            {% if files %}
-            <table>
-                <thead>
-                    <tr>
-                        <th>Filename</th>
-                        <th>Version</th>
-                        <th>Size</th>
-                        <th>Replicas</th>
-                        <th>Checksum</th>
-                        <th>Uploaded At</th>
-                        <th>Actions</th>
-                    </tr>
-                </thead>
-                <tbody>
-                    {% for file in files %}
-                    {% set replica_count = file['nodes'].split(',')|length %}
-                    <tr>
-                        <td>
-                            <div class="file-name" title="{{ file['filename'] }}">{{ file['filename'] }}</div>
-                            <div class="file-id">{{ file['file_id'][:16] }}…</div>
-                        </td>
-                        <td>
-                            {% if file['is_latest'] %}
-                            <span class="badge badge-green">v{{ file['version'] }} Latest</span>
-                            {% else %}
-                            <span class="badge badge-orange">v{{ file['version'] }}</span>
-                            {% endif %}
-                        </td>
-                        <td>{{ (file['size'] / 1024)|round(1) }} KB</td>
-                        <td>
-                            <span class="badge {% if replica_count >= 3 %}badge-green{% elif replica_count == 2 %}badge-orange{% else %}badge-blue{% endif %}">
-                                <i class="fa-solid fa-copy" style="font-size:.65rem;"></i>
-                                {{ replica_count }}/{{ node_status|length }}
-                            </span>
-                        </td>
-                        <td><div class="checksum" title="{{ file['checksum'] }}">{{ file['checksum'][:12] }}…</div></td>
-                        <td style="color:var(--muted);font-size:.8rem;">{{ file['uploaded_at'] }}</td>
-                        <td>
-                            <div style="display:flex;gap:6px;flex-wrap:wrap;">
-                                <a class="btn btn-primary btn-sm" href="/files/{{ file['file_id'] }}">
-                                    <i class="fa-solid fa-download"></i> Download
-                                </a>
-                                <button class="btn btn-ghost btn-sm" onclick="showVersions('{{ file['file_id'] }}', '{{ file['filename'] }}')">
-                                    <i class="fa-solid fa-clock-rotate-left"></i> History
-                                </button>
-                            </div>
-                        </td>
-                    </tr>
-                    {% endfor %}
-                </tbody>
-            </table>
-            {% else %}
-            <div class="empty-state">
-                <i class="fa-regular fa-folder-open"></i>
-                <p>No files uploaded yet. Upload your first file above.</p>
+    <!-- Main Dashboard Grid (2 Columns) -->
+    <div class="dashboard-grid">
+        
+        <!-- Left Side: Operations & Files -->
+        <div class="dashboard-left">
+            <!-- Upload Card -->
+            <div class="card">
+                <div class="card-title">
+                    <div class="card-title-left"><i class="fa-solid fa-cloud-arrow-up"></i> Upload File</div>
+                </div>
+                <div class="upload-zone" id="upload-zone">
+                    <input type="file" id="file-input">
+                    <i class="fa-regular fa-folder-open"></i>
+                    <p>Drag & drop a file here, or <strong>click to browse</strong></p>
+                    <p style="margin-top:6px;font-size:.78rem;">Replicated in parallel with real-time AI Malware check</p>
+                </div>
+                <div class="selected-file" id="selected-file">
+                    <i class="fa-regular fa-file"></i>
+                    <span id="selected-filename">No file</span>
+                </div>
+                <div class="progress-wrap" id="progress-wrap">
+                    <div class="progress-bar-bg"><div class="progress-bar-fill" id="progress-bar"></div></div>
+                    <div class="progress-label" id="progress-label">Uploading…</div>
+                </div>
+                <div style="margin-top:18px;">
+                    <button class="btn btn-primary" id="upload-btn" onclick="uploadFile()" disabled>
+                        <i class="fa-solid fa-upload"></i> Upload & Replicate
+                    </button>
+                </div>
             </div>
-            {% endif %}
+
+            <!-- Actions Card -->
+            <div class="card">
+                <div class="card-title">
+                    <div class="card-title-left"><i class="fa-solid fa-sliders"></i> System Actions</div>
+                </div>
+                <div class="actions">
+                    <button class="btn btn-success" onclick="createCheckpoint()">
+                        <i class="fa-solid fa-camera"></i> Create Checkpoint
+                    </button>
+                    <button class="btn btn-warning" onclick="triggerRecovery()">
+                        <i class="fa-solid fa-rotate"></i> Trigger Node Recovery
+                    </button>
+                    <button class="btn btn-ghost" onclick="refreshStatus()">
+                        <i class="fa-solid fa-arrows-rotate"></i> Refresh Node Status
+                    </button>
+                </div>
+            </div>
+
+            <!-- Files Table -->
+            <div class="card">
+                <div class="card-title">
+                    <div class="card-title-left">
+                        <i class="fa-solid fa-database"></i> Stored Files
+                        <span class="badge badge-blue" style="margin-left:8px;">{{ files|length }} files</span>
+                    </div>
+                </div>
+                <div class="table-wrap">
+                    {% if files %}
+                    <table>
+                        <thead>
+                            <tr>
+                                <th>Filename</th>
+                                <th>Version</th>
+                                <th>Size</th>
+                                <th>Replicas</th>
+                                <th>Checksum</th>
+                                <th>Uploaded At</th>
+                                <th>Actions</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            {% for file in files %}
+                            {% set replica_count = file['nodes'].split(',')|length %}
+                            <tr>
+                                <td>
+                                    <div class="file-name" title="{{ file['filename'] }}">{{ file['filename'] }}</div>
+                                    <div class="file-id">{{ file['file_id'][:16] }}…</div>
+                                </td>
+                                <td>
+                                    {% if file['is_latest'] %}
+                                    <span class="badge badge-green">v{{ file['version'] }} Latest</span>
+                                    {% else %}
+                                    <span class="badge badge-orange">v{{ file['version'] }}</span>
+                                    {% endif %}
+                                </td>
+                                <td>{{ (file['size'] / 1024)|round(1) }} KB</td>
+                                <td>
+                                    <span class="badge {% if replica_count >= 3 %}badge-green{% elif replica_count == 2 %}badge-orange{% else %}badge-blue{% endif %}">
+                                        <i class="fa-solid fa-copy" style="font-size:.65rem;"></i>
+                                        {{ replica_count }}/{{ node_status|length }}
+                                    </span>
+                                </td>
+                                <td><div class="checksum" title="{{ file['checksum'] }}">{{ file['checksum'][:12] }}…</div></td>
+                                <td style="color:var(--muted);font-size:.8rem;">{{ file['uploaded_at'] }}</td>
+                                <td>
+                                    <div style="display:flex;gap:6px;flex-wrap:wrap;">
+                                        <a class="btn btn-primary btn-sm" href="/files/{{ file['file_id'] }}">
+                                            <i class="fa-solid fa-download"></i> Download
+                                        </a>
+                                        <button class="btn btn-ghost btn-sm" onclick="showVersions('{{ file.file_id }}', '{{ file.filename }}')">
+                                            <i class="fa-solid fa-clock-rotate-left"></i> History
+                                        </button>
+                                    </div>
+                                </td>
+                            </tr>
+                            {% endfor %}
+                        </tbody>
+                    </table>
+                    {% else %}
+                    <div class="empty-state">
+                        <i class="fa-regular fa-folder-open"></i>
+                        <p>No files uploaded yet. Upload your first file above.</p>
+                    </div>
+                    {% endif %}
+                </div>
+            </div>
         </div>
+
+        <!-- Right Side: Real-Time AI & Security -->
+        <div class="dashboard-right">
+            <div class="card" style="border: 1px solid rgba(124, 92, 252, 0.4); box-shadow: 0 0 15px rgba(124, 92, 252, 0.15);">
+                <div class="card-title">
+                    <div class="card-title-left" style="color: #a78bfa;">
+                        <i class="fa-solid fa-brain" style="color: #7c5cfc;"></i>
+                        AI Security & Active Defense
+                    </div>
+                    <div style="display:flex;gap:6px;">
+                        <button class="btn btn-primary btn-sm" style="padding:4px 8px; font-size:.7rem;" onclick="retrainAIModels()">
+                            <i class="fa-solid fa-arrows-spin"></i> Retrain AI
+                        </button>
+                        <button class="btn btn-ghost btn-sm" style="padding:4px 8px; font-size:.7rem;" onclick="clearSecurityBlocks()">
+                            <i class="fa-solid fa-trash-can"></i> Clear Blocks
+                        </button>
+                    </div>
+                </div>
+                
+                <div class="ai-status-row">
+                    <div class="ai-status-label">Blacklisted Clients (IP)</div>
+                    <div class="ai-status-content" id="blocked-ips-list">
+                        <span class="text-muted" style="font-size:.85rem;color:var(--muted)">No IPs blocked</span>
+                    </div>
+                </div>
+
+                <div class="ai-status-row">
+                    <div class="ai-status-label">Quarantined Files</div>
+                    <div class="ai-status-content" id="blocked-files-list">
+                        <span class="text-muted" style="font-size:.85rem;color:var(--muted)">No files quarantined</span>
+                    </div>
+                </div>
+
+                <div class="ai-status-row">
+                    <div class="ai-status-label">Autonomic Threats & Health Log</div>
+                    <div class="alerts-feed-container" id="ai-alerts-feed">
+                        <div style="color:var(--muted);text-align:center;padding:10px;font-size:.85rem;">No security threats or health alerts logged.</div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
     </div>
 
 </div>
@@ -510,8 +623,12 @@ function uploadFile() {
             showToast('success', `✅ "${res.filename}" v${res.version} uploaded to ${res.replicas} replica(s)!`);
             setTimeout(() => location.reload(), 1200);
         } else {
-            const err = JSON.parse(xhr.responseText);
-            showToast('error', `Upload failed: ${err.error || xhr.statusText}`);
+            let errMsg = xhr.statusText;
+            try {
+                const err = JSON.parse(xhr.responseText);
+                errMsg = err.error || errMsg;
+            } catch(e) {}
+            showToast('error', `Upload failed: ${errMsg}`);
             resetUpload();
         }
     });
@@ -553,7 +670,43 @@ function triggerRecovery() {
         .catch(() => showToast('error', 'Recovery request failed.'));
 }
 
-// ── Live Node Status Polling ────────────────────────────────────────────────
+// ── Clear Blocks ────────────────────────────────────────────────────────────
+function clearSecurityBlocks() {
+    showToast('info', 'Clearing all blacklists & quarantine logs...');
+    // We send request to the AI analyzer status endpoint via a reverse proxy or direct API
+    // Actually, coordinator can serve a POST wrapper, or we can ping the AI diagnostic port directly if exposed.
+    // For containerized environments, calling coordinator's API is better. Since ai-analyzer diagnostic port is exposed on host (5200), we can fetch that.
+    fetch('http://localhost:5200/clear-blocks', { method: 'POST', mode: 'cors' })
+        .then(r => r.json())
+        .then(data => {
+            showToast('success', 'All blacklisted IPs and quarantined files cleared!');
+            pollAIStatus();
+        })
+        .catch(() => {
+            // fallback attempt through coordinator if direct fails
+            showToast('error', 'Could not reach AI Diagnostics Server to clear blocks.');
+        });
+}
+
+function retrainAIModels() {
+    showToast('info', 'Triggering AI model retraining on live telemetry...');
+    fetch('/retrain-ai', { method: 'POST' })
+        .then(r => {
+            if (r.status === 200) {
+                return r.json();
+            }
+            return r.json().then(e => { throw new Error(e.error || r.statusText); });
+        })
+        .then(data => {
+            showToast('success', `AI models successfully retrained using ${data.records_used} telemetry logs!`);
+            pollAIStatus();
+        })
+        .catch(err => {
+            showToast('error', `Retraining failed: ${err.message || 'telemetry history is empty yet. Please interact with nodes first.'}`);
+        });
+}
+
+// ── Live Node & AI Status Polling ───────────────────────────────────────────
 function refreshStatus() {
     fetch('/node-status')
         .then(r => r.json())
@@ -572,8 +725,82 @@ function refreshStatus() {
         .catch(() => showToast('error', 'Failed to refresh node status.'));
 }
 
-// Auto-refresh every 15 seconds
-setInterval(refreshStatus, 15000);
+function pollAIStatus() {
+    fetch('/ai-status')
+        .then(r => r.json())
+        .then(data => {
+            // Update node cards with predicted latency & health
+            Object.entries(data.health_states).forEach(([nodeUrl, health]) => {
+                const nodeName = nodeUrl.split('//')[1].split(':')[0];
+                const card = document.getElementById(`node-${nodeName}`);
+                if (!card) return;
+                
+                const statusLbl = card.querySelector('.status');
+                if (health === 'degraded') {
+                    card.className = `node-card degraded`;
+                    card.querySelector('.node-dot').className = `node-dot degraded`;
+                    statusLbl.innerHTML = `<span style="color:var(--warning)">⚠️ AI Degraded</span>`;
+                }
+            });
+
+            // Update latency text
+            Object.entries(data.predicted_latencies_1mb).forEach(([nodeUrl, latency]) => {
+                const nodeName = nodeUrl.split('//')[1].split(':')[0];
+                const card = document.getElementById(`node-${nodeName}`);
+                if (!card) return;
+                let latEl = card.querySelector('.latency-val');
+                if (!latEl) {
+                    latEl = document.createElement('div');
+                    latEl.className = 'latency-val';
+                    latEl.style.fontSize = '.72rem';
+                    latEl.style.color = 'var(--muted)';
+                    latEl.style.marginTop = '4px';
+                    card.querySelector('.node-info').appendChild(latEl);
+                }
+                latEl.innerHTML = `<i class="fa-solid fa-bolt" style="font-size:.65rem; color:#eab308; margin-right:4px;"></i>AI Est. Latency: ${(parseFloat(latency) * 1000).toFixed(0)}ms`;
+            });
+
+            // Update Blocked IPs list
+            const ipList = document.getElementById('blocked-ips-list');
+            if (data.blocked_ips.length === 0) {
+                ipList.innerHTML = '<span class="text-muted" style="font-size:.85rem;color:var(--muted)">No IPs blocked</span>';
+            } else {
+                ipList.innerHTML = data.blocked_ips.map(ip => `<span class="badge badge-orange"><i class="fa-solid fa-ban"></i> ${ip}</span>`).join('');
+            }
+
+            // Update Blocked Files list
+            const fileList = document.getElementById('blocked-files-list');
+            if (data.blocked_files.length === 0) {
+                fileList.innerHTML = '<span class="text-muted" style="font-size:.85rem;color:var(--muted)">No files quarantined</span>';
+            } else {
+                fileList.innerHTML = data.blocked_files.map(id => `<span class="badge badge-orange" style="font-family:monospace;" title="${id}"><i class="fa-solid fa-shield-virus"></i> ${id.slice(0,8)}...</span>`).join('');
+            }
+
+            // Update Alerts list
+            const alertList = document.getElementById('ai-alerts-feed');
+            if (data.alerts.length === 0) {
+                alertList.innerHTML = '<div style="color:var(--muted);text-align:center;padding:10px;font-size:.85rem;">No security threats or health alerts logged.</div>';
+            } else {
+                alertList.innerHTML = data.alerts.map(a => {
+                    let color = 'var(--muted)';
+                    let icon = 'fa-circle-info';
+                    if (a.type === 'health_anomaly') { color = 'var(--warning)'; icon = 'fa-triangle-exclamation'; }
+                    if (a.type === 'malicious_upload') { color = 'var(--danger)'; icon = 'fa-shield-virus'; }
+                    if (a.type === 'volumetric_abuse') { color = 'var(--danger)'; icon = 'fa-ban'; }
+                    return `<div style="border-bottom:1px solid rgba(255,255,255,0.05);padding:8px 0;font-size:.85rem;line-height:1.4;">
+                        <span style="color:var(--muted);font-size:.72rem;">[${a.timestamp}]</span>
+                        <strong style="color:${color};margin-left:5px;text-transform:capitalize;"><i class="fa-solid ${icon}"></i> ${a.type.replace(/_/g,' ')}</strong>
+                        <div style="margin-top:4px;color:var(--text);padding-left:12px;">${a.message}</div>
+                    </div>`;
+                }).join('');
+            }
+        });
+}
+
+// Initial polls
+pollAIStatus();
+setInterval(pollAIStatus, 3000); // Poll AI metrics every 3 seconds for near-real-time responsiveness
+setInterval(refreshStatus, 15000); // Poll node connectivity every 15 seconds
 
 // ── Version History Modal ───────────────────────────────────────────────────
 function showVersions(fileId, filename) {

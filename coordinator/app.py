@@ -7,13 +7,15 @@ Upgrades implemented:
   4. SQLite Metadata (atomic writes, versioning support)
   5. SHA256 File Integrity Checks
   6. File Versioning (multiple versions per filename)
+  7. Redis Pub/Sub integration for Telemetry, Intelligent load balancing, and active defense
 """
 
-from flask import Flask, request, jsonify, render_template, send_file, redirect, url_for, Response
-import os, requests, uuid, sqlite3, hashlib, threading, time, logging
+from flask import Flask, request, jsonify, render_template, Response
+import os, requests, uuid, sqlite3, hashlib, threading, time, logging, json
 from io import BytesIO
 from datetime import datetime
 from concurrent.futures import ThreadPoolExecutor, as_completed
+import redis
 
 # ─────────────────────────────────────────────────────────────────────────────
 # App Setup
@@ -31,13 +33,49 @@ NODES = os.environ.get(
 ).split(',')
 
 # ─────────────────────────────────────────────────────────────────────────────
+# Redis Integration & Retry Connection
+# ─────────────────────────────────────────────────────────────────────────────
+REDIS_HOST = os.environ.get("REDIS_HOST", "localhost")
+REDIS_PORT = int(os.environ.get("REDIS_PORT", 6379))
+
+def get_redis_client():
+    retries = 5
+    client = None
+    while retries > 0:
+        try:
+            client = redis.Redis(host=REDIS_HOST, port=REDIS_PORT, decode_responses=True)
+            client.ping()
+            app.logger.info("Connected to Redis successfully.")
+            return client
+        except Exception as e:
+            app.logger.warning("Waiting for Redis... %s", e)
+            retries -= 1
+            time.sleep(2)
+    app.logger.error("Failed to connect to Redis. Continuing without caching.")
+    return None
+
+r_client = get_redis_client()
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Active Defense (IP blocking)
+# ─────────────────────────────────────────────────────────────────────────────
+@app.before_request
+def check_ip_blacklist():
+    if r_client:
+        client_ip = request.remote_addr
+        # Check if the IP is blacklisted in Redis
+        if r_client.sismember("blocked_ips", client_ip):
+            app.logger.warning("Blocked connection attempt from blacklisted IP: %s", client_ip)
+            return jsonify({
+                "error": "Access Denied. Your IP address has been blacklisted by Active Defense due to anomalous request patterns."
+            }), 403
+
+# ─────────────────────────────────────────────────────────────────────────────
 # Upgrade 4 — SQLite Metadata Layer (thread-safe, atomic writes)
 # ─────────────────────────────────────────────────────────────────────────────
 _db_lock = threading.Lock()
 
 def get_db():
-    """Return a new per-call SQLite connection (check_same_thread=False is safe
-    because we guard every write with _db_lock)."""
     conn = sqlite3.connect(DB_FILE, check_same_thread=False)
     conn.row_factory = sqlite3.Row
     return conn
@@ -101,14 +139,13 @@ def _do_recovery(node_url: str):
                             timeout=10
                         )
                         if pr.status_code == 200:
-                            # Update metadata to include recovered node
                             new_nodes = ','.join(stored_nodes + [node_url])
                             with _db_lock:
                                 conn = get_db()
                                 conn.execute(
                                     "UPDATE files SET nodes=? WHERE file_id=?",
                                     (new_nodes, row['file_id'])
-                                )
+                               )
                                 conn.commit()
                                 conn.close()
                             break
@@ -121,24 +158,39 @@ def _do_recovery(node_url: str):
         app.logger.info("Auto-recovery complete for %s", node_url)
 
 def health_monitor():
-    """Runs in background — checks all nodes every 15 seconds and auto-recovers."""
-    # Wait for nodes to start up
+    """Checks all nodes every 15 seconds, checks AI degradation flags, and recovers."""
     time.sleep(10)
     prev_status = {n: 'unknown' for n in NODES}
 
     while True:
         for node in NODES:
             try:
+                # Basic HTTP check
                 r = requests.get(f"{node}/health", timeout=3)
-                current = 'online' if r.status_code == 200 else 'offline'
+                http_ok = r.status_code == 200
             except Exception:
+                http_ok = False
+
+            # Check if AI predictive health status has flagged this node as degraded
+            ai_degraded = False
+            if r_client:
+                ai_health = r_client.hget("node_health_status", node)
+                if ai_health == "degraded":
+                    ai_degraded = True
+
+            # Determine final state: if HTTP down or predicted degraded by AI, mark as offline/degraded
+            if not http_ok:
                 current = 'offline'
+            elif ai_degraded:
+                current = 'degraded'
+            else:
+                current = 'online'
 
             with _status_lock:
                 node_status[node] = current
 
-            # If node just came back online → auto-recover
-            if prev_status[node] == 'offline' and current == 'online':
+            # Auto-recover if node transitions from offline -> online/healthy
+            if prev_status[node] == 'offline' and current in ('online', 'degraded'):
                 if node not in _recovering:
                     _recovering.add(node)
                     t = threading.Thread(target=_do_recovery, args=(node,), daemon=True)
@@ -151,10 +203,10 @@ def health_monitor():
 threading.Thread(target=health_monitor, daemon=True).start()
 
 # ─────────────────────────────────────────────────────────────────────────────
-# Upgrade 1 — Parallel Replication Helper
+# Parallel Replication Helper
 # ─────────────────────────────────────────────────────────────────────────────
 def _store_on_node(node: str, filename: str, filepath: str, file_id: str):
-    """Upload a file to a single node. Returns node URL on success, None on failure."""
+    """Upload a file to a single node."""
     try:
         with open(filepath, 'rb') as f:
             r = requests.post(
@@ -169,7 +221,7 @@ def _store_on_node(node: str, filename: str, filepath: str, file_id: str):
         return None
 
 # ─────────────────────────────────────────────────────────────────────────────
-# Upgrade 3 — Routes & Modern UI
+# Routes & UI
 # ─────────────────────────────────────────────────────────────────────────────
 @app.route('/')
 def index():
@@ -188,21 +240,33 @@ def index():
 @app.route('/files', methods=['POST'])
 def upload():
     """
-    Upgrade 1: Parallel replication via ThreadPoolExecutor.
-    Upgrade 5: SHA256 checksum computed at upload time.
-    Upgrade 6: File versioning — new upload of same filename bumps version.
+    Upload a file:
+    1. Computes SHA256
+    2. Publishes payload to Redis for real-time AI Malware Scanning
+    3. Blocks file replication if model flags it as malicious
+    4. Parallel replication to nodes
     """
     f = request.files.get('file')
     if not f or f.filename == '':
         return jsonify({'error': 'No file provided'}), 400
 
+    # Publish access log event
+    if r_client:
+        r_client.publish("security_events", json.dumps({
+            "event": "access",
+            "ip": request.remote_addr,
+            "action": "upload"
+        }))
+
     filename = f.filename
     file_id = str(uuid.uuid4())
     temp_filepath = os.path.join(DATA_DIR, f"temp_{file_id}_{filename}")
     
-    # Stream to temp file while computing checksum
+    # Stream to temp file while computing checksum & saving content sample
     sha256 = hashlib.sha256()
     size = 0
+    content_sample = ""
+    
     with open(temp_filepath, 'wb') as out:
         while True:
             chunk = f.read(65536)
@@ -211,11 +275,39 @@ def upload():
             out.write(chunk)
             sha256.update(chunk)
             size += len(chunk)
+            # Retain first 10KB as a text sample for the AI analyzer scanner
+            if len(content_sample) < 10240:
+                try:
+                    content_sample += chunk.decode('utf-8', errors='ignore')
+                except Exception:
+                    pass
 
-    # Upgrade 5 — Compute SHA256 checksum
     checksum = sha256.hexdigest()
 
-    # Upgrade 6 — Determine version number
+    # Publish upload payload to Redis for Malware Scanner to evaluate
+    if r_client:
+        r_client.publish("security_events", json.dumps({
+            "event": "upload",
+            "file_id": file_id,
+            "filename": filename,
+            "content": content_sample[:10000] # clamp size
+        }))
+
+        # Real-time blocking: wait briefly to see if AI flags it
+        is_blocked = False
+        for _ in range(3):
+            time.sleep(0.1) # sleep 100ms
+            if r_client.sismember("blocked_files", file_id):
+                is_blocked = True
+                break
+        
+        if is_blocked:
+            if os.path.exists(temp_filepath):
+                os.remove(temp_filepath)
+            app.logger.warning("Upload blocked by Content Security Scanner: %s", filename)
+            return jsonify({'error': 'Security Block: File contains patterns flagged as unsafe by the Content Security model.'}), 403
+
+    # Versioning
     with _db_lock:
         conn = get_db()
         row = conn.execute(
@@ -224,7 +316,6 @@ def upload():
         ).fetchone()
         new_version = (row['max_ver'] or 0) + 1
 
-        # Mark all previous versions of this filename as not latest
         conn.execute(
             "UPDATE files SET is_latest=0 WHERE filename=?",
             (filename,)
@@ -232,7 +323,7 @@ def upload():
         conn.commit()
         conn.close()
 
-    # Upgrade 1 — Parallel replication
+    # Parallel replication
     stored_nodes = []
     with ThreadPoolExecutor(max_workers=len(NODES)) as executor:
         futures = {
@@ -244,14 +335,13 @@ def upload():
             if result:
                 stored_nodes.append(result)
 
-    # Clean up temp file
     if os.path.exists(temp_filepath):
         os.remove(temp_filepath)
 
     if not stored_nodes:
         return jsonify({'error': 'Failed to store file on any node'}), 500
 
-    # Upgrade 4 — Write to SQLite atomically
+    # Write to SQLite
     with _db_lock:
         conn = get_db()
         conn.execute(
@@ -279,8 +369,19 @@ def upload():
 @app.route('/files/<file_id>')
 def download(file_id):
     """
-    Upgrade 5: Verify SHA256 checksum after download.
+    Download route:
+    1. Publishes IP event to Redis for Volumetric abuse checks
+    2. Employs Intelligent Load Balancing to sort nodes based on predicted latency
     """
+    # Active Defense: track and verify volumetric downloads
+    if r_client:
+        r_client.publish("security_events", json.dumps({
+            "event": "access",
+            "ip": request.remote_addr,
+            "file_id": file_id,
+            "action": "download"
+        }))
+
     conn = get_db()
     row = conn.execute(
         "SELECT * FROM files WHERE file_id=?", (file_id,)
@@ -290,12 +391,36 @@ def download(file_id):
     if not row:
         return jsonify({'error': 'File not found'}), 404
 
+    # Security check: verify file has not been quarantined/blocked
+    if r_client and r_client.sismember("blocked_files", file_id):
+        return jsonify({'error': 'File blocked. This file has been quarantined by the Content Security model.'}), 403
+
     stored_nodes = row['nodes'].split(',')
+    
+    # ─────────────────────────────────────────────────────────────────────────
+    # Intelligent Load Balancing: Sort stored_nodes by predicted latency in Redis
+    # ─────────────────────────────────────────────────────────────────────────
+    if r_client:
+        # Determine whether to use 1MB or 10MB predicted latencies based on file size
+        file_size_mb = row['size'] / (1024 * 1024)
+        hash_name = "node_predicted_latency_10mb" if file_size_mb >= 5.0 else "node_predicted_latency_1mb"
+        
+        predicted_latencies = r_client.hgetall(hash_name) or {}
+        
+        # Sort nodes: lowest predicted latency first. Missing values default to high latency (e.g. 99.0)
+        stored_nodes.sort(key=lambda n: float(predicted_latencies.get(n, 99.0)))
+        app.logger.info("Intelligent load balancing routes sorted: %s", stored_nodes)
+
     for node in stored_nodes:
+        # Check node status: avoid routing to offline or predictive-degraded nodes
+        with _status_lock:
+            state = node_status.get(node, "unknown")
+        if state == "offline":
+            continue
+
         try:
             r = requests.get(f"{node}/store/{file_id}", timeout=8, stream=True)
             if r.status_code == 200:
-                # Node already verifies integrity. We stream to the client.
                 return Response(
                     r.iter_content(chunk_size=65536),
                     headers={'Content-Disposition': f'attachment; filename="{row["filename"]}"'},
@@ -309,25 +434,24 @@ def download(file_id):
 
 @app.route('/files/<file_id>/versions')
 def list_versions(file_id):
-    """Upgrade 6: List all versions of a file by its filename."""
+    # FIX Bug 6: open a single connection and always close it regardless of path.
     conn = get_db()
-    row = conn.execute("SELECT filename FROM files WHERE file_id=?", (file_id,)).fetchone()
-    if not row:
+    try:
+        row = conn.execute("SELECT filename FROM files WHERE file_id=?", (file_id,)).fetchone()
+        if not row:
+            return jsonify({'error': 'File not found'}), 404
+        versions = conn.execute(
+            "SELECT file_id, filename, version, size, checksum, uploaded_at, is_latest "
+            "FROM files WHERE filename=? ORDER BY version DESC",
+            (row['filename'],)
+        ).fetchall()
+        return jsonify([dict(v) for v in versions])
+    finally:
         conn.close()
-        return jsonify({'error': 'File not found'}), 404
-    versions = conn.execute(
-        "SELECT file_id, filename, version, size, checksum, uploaded_at, is_latest "
-        "FROM files WHERE filename=? ORDER BY version DESC",
-        (row['filename'],)
-    ).fetchall()
-    conn.close()
-
-    return jsonify([dict(v) for v in versions])
 
 
 @app.route('/checkpoint', methods=['POST'])
 def checkpoint_all():
-    """Trigger checkpoint on all nodes in parallel."""
     results = {}
 
     def _ckpt(node):
@@ -346,7 +470,6 @@ def checkpoint_all():
 
 @app.route('/recover/<node_name>', methods=['POST'])
 def recover_node(node_name):
-    """Upgrade 2: Async background recovery — returns immediately."""
     node_url = f"http://{node_name}:5100"
     if node_url in _recovering:
         return jsonify({'status': 'already_recovering', 'node': node_name})
@@ -373,9 +496,41 @@ def status():
 
 @app.route('/node-status')
 def node_status_api():
-    """Lightweight polling endpoint for the live dashboard."""
+    """Polling status containing node connectivity and active defense states."""
     with _status_lock:
         return jsonify(node_status)
+
+
+@app.route('/ai-status')
+def ai_status_api():
+    """Fetches real-time AI states, predictions, and active blocks from Redis."""
+    if not r_client:
+        return jsonify({"error": "Redis not connected"}), 503
+
+    health_states = r_client.hgetall("node_health_status") or {}
+    predicted_latencies_1mb = r_client.hgetall("node_predicted_latency_1mb") or {}
+    blocked_ips = list(r_client.smembers("blocked_ips"))
+    blocked_files = list(r_client.smembers("blocked_files"))
+    alerts_raw = r_client.lrange("system_alerts", 0, 9) or []
+    alerts = [json.loads(a) for a in alerts_raw]
+
+    return jsonify({
+        "health_states": health_states,
+        "predicted_latencies_1mb": predicted_latencies_1mb,
+        "blocked_ips": blocked_ips,
+        "blocked_files": blocked_files,
+        "alerts": alerts
+    })
+
+
+@app.route('/retrain-ai', methods=['POST'])
+def retrain_ai():
+    try:
+        r = requests.post("http://ai-analyzer:5200/retrain", timeout=10)
+        return jsonify(r.json()), r.status_code
+    except Exception as e:
+        app.logger.error("Failed to retrain AI: %s", e)
+        return jsonify({"error": f"Failed to contact AI service: {e}"}), 502
 
 
 @app.route('/health')
