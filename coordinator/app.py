@@ -356,6 +356,15 @@ def upload():
         conn.commit()
         conn.close()
 
+    # Report successful clean file upload to AI service for incremental learning (Pattern 2)
+    try:
+        requests.post("http://ai-analyzer:5200/feedback", json={
+            "content": content_sample[:10000],
+            "label": 0
+        }, timeout=2)
+    except Exception as e:
+        app.logger.warning("Feedback to AI service failed: %s", e)
+
     return jsonify({
         'status':   'success',
         'file_id':  file_id,

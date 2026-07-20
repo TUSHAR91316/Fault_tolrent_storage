@@ -232,28 +232,54 @@ def retrain():
     all_disk    = disk_vals    + list(base_disk)
     all_latency = latency_vals + list(base_latency)
 
-    # Retrain Failure Predictor (IsolationForest)
+    # Retrain local Failure Predictor (IsolationForest) - Pattern 3
     X_failure = np.column_stack((all_cpu, all_ram, all_disk, all_latency))
-    failure_predictor.model.fit(X_failure)
+    failure_predictor.local_model.fit(X_failure)
 
-    # Retrain Latency Predictor (LinearRegression)
+    # Retrain local Latency Predictor (LinearRegression) - Pattern 3
     file_sizes = np.random.uniform(0.1, 10.0, len(all_cpu))
     X_latency  = np.column_stack((all_cpu, all_ram, file_sizes))
     # Derive realistic labels: latency grows with load and file size
     y_latency  = 0.05 + np.array(all_cpu)*0.001 + np.array(all_ram)*0.0005 + file_sizes*0.003
     y_latency  = np.clip(y_latency, 0.01, 2.0)
-    latency_predictor.model.fit(X_latency, y_latency)
+    latency_predictor.local_model.fit(X_latency, y_latency)
 
     publish_alert({
         "type":    "model_retrained",
-        "message": f"Autonomic Optimization: ML models dynamically retrained on {len(records)} live telemetry records + {n_baseline} baseline samples."
+        "message": f"Autonomic Optimization: ML local models dynamically retrained on {len(records)} live telemetry records + {n_baseline} baseline samples."
     })
 
     return jsonify({
         "status":       "retrained",
         "records_used": len(records),
-        "message":      f"Models retrained on {len(records)} live metrics + {n_baseline} baseline samples."
+        "message":      f"Local models retrained on {len(records)} live metrics + {n_baseline} baseline samples."
     }), 200
+
+
+@app.route("/feedback", methods=["POST"])
+def feedback():
+    """Endpoint for incremental online learning (Pattern 2) of the content security classifier."""
+    data = request.get_json()
+    if not data or "content" not in data or "label" not in data:
+        return jsonify({"error": "Missing content or label"}), 400
+
+    content = data["content"]
+    try:
+        label = int(data["label"])
+        if label not in (0, 1):
+            raise ValueError()
+    except ValueError:
+        return jsonify({"error": "Label must be 0 (benign) or 1 (suspicious)"}), 400
+
+    success = security_classifier.learn_incremental(content, label)
+    if success:
+        publish_alert({
+            "type": "incremental_learning",
+            "message": f"Online Learning: Content security model incrementally trained on new sample (label: {label})."
+        })
+        return jsonify({"status": "success", "message": "Model updated incrementally."}), 200
+    else:
+        return jsonify({"error": "Failed to run incremental update."}), 500
 
 
 @app.route("/clear-blocks", methods=["POST"])
