@@ -108,8 +108,8 @@ init_db()
 # Upgrade 2 — Automated Self-Healing Health Monitor
 # ─────────────────────────────────────────────────────────────────────────────
 node_status   = {n: 'unknown' for n in NODES}   # shared status dict
-_status_lock  = threading.Lock()
-_recovering   = set()                            # nodes currently being recovered
+_status_lock  = threading.Lock()                 # guards both node_status AND _recovering
+_recovering   = set()                            # nodes currently being recovered (guarded by _status_lock)
 
 def _do_recovery(node_url: str):
     """Background recovery: push missing files from any healthy donor."""
@@ -154,7 +154,8 @@ def _do_recovery(node_url: str):
     except Exception as e:
         app.logger.error("Recovery error for %s: %s", node_url, e)
     finally:
-        _recovering.discard(node_url)
+        with _status_lock:
+            _recovering.discard(node_url)
         app.logger.info("Auto-recovery complete for %s", node_url)
 
 def health_monitor():
@@ -189,10 +190,14 @@ def health_monitor():
             with _status_lock:
                 node_status[node] = current
 
-            # Auto-recover if node transitions from offline -> online/healthy
+            # Auto-recover if node transitions from offline -> online/healthy.
+            # FIX Bug 6: _recovering reads/writes are now inside _status_lock.
             if prev_status[node] == 'offline' and current in ('online', 'degraded'):
-                if node not in _recovering:
-                    _recovering.add(node)
+                with _status_lock:
+                    already = node in _recovering
+                    if not already:
+                        _recovering.add(node)
+                if not already:
                     t = threading.Thread(target=_do_recovery, args=(node,), daemon=True)
                     t.start()
 
@@ -258,7 +263,11 @@ def upload():
             "action": "upload"
         }))
 
-    filename = f.filename
+    # FIX Bug 8: sanitise the filename to prevent path-traversal attacks.
+    # os.path.basename strips any leading directory components (e.g. '../../etc/cron').
+    filename = os.path.basename(f.filename)
+    if not filename:
+        return jsonify({'error': 'Invalid filename'}), 400
     file_id = str(uuid.uuid4())
     temp_filepath = os.path.join(DATA_DIR, f"temp_{file_id}_{filename}")
     
@@ -356,14 +365,18 @@ def upload():
         conn.commit()
         conn.close()
 
-    # Report successful clean file upload to AI service for incremental learning (Pattern 2)
-    try:
-        requests.post("http://ai-analyzer:5200/feedback", json={
-            "content": content_sample[:10000],
-            "label": 0
-        }, timeout=2)
-    except Exception as e:
-        app.logger.warning("Feedback to AI service failed: %s", e)
+    # Report successful clean file upload to AI service for incremental learning (Pattern 2).
+    # FIX Bug 7: only send feedback when there is actual text content — binary uploads
+    # produce an empty content_sample which would corrupt the Naive Bayes distribution
+    # by training it on an empty document labelled as benign.
+    if content_sample.strip():
+        try:
+            requests.post("http://ai-analyzer:5200/feedback", json={
+                "content": content_sample[:10000],
+                "label": 0
+            }, timeout=2)
+        except Exception as e:
+            app.logger.warning("Feedback to AI service failed: %s", e)
 
     return jsonify({
         'status':   'success',
@@ -480,10 +493,11 @@ def checkpoint_all():
 @app.route('/recover/<node_name>', methods=['POST'])
 def recover_node(node_name):
     node_url = f"http://{node_name}:5100"
-    if node_url in _recovering:
-        return jsonify({'status': 'already_recovering', 'node': node_name})
-
-    _recovering.add(node_url)
+    # FIX Bug 6: _recovering must be read/written under _status_lock
+    with _status_lock:
+        if node_url in _recovering:
+            return jsonify({'status': 'already_recovering', 'node': node_name})
+        _recovering.add(node_url)
     t = threading.Thread(target=_do_recovery, args=(node_url,), daemon=True)
     t.start()
     return jsonify({'status': 'recovery_started', 'node': node_name})

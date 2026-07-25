@@ -4,7 +4,9 @@ import json
 import threading
 import numpy as np
 import redis
-from flask import Flask, jsonify
+# FIX Bug 1: 'request' was missing from the Flask import — the /feedback
+# endpoint uses request.get_json() which would NameError on every call.
+from flask import Flask, jsonify, request
 from models import failure_predictor, latency_predictor, security_classifier, access_anomaly_detector
 
 # Flask App for Diagnostics
@@ -14,9 +16,8 @@ app = Flask(__name__)
 REDIS_HOST = os.environ.get("REDIS_HOST", "redis")
 REDIS_PORT = int(os.environ.get("REDIS_PORT", 6379))
 
-# FIX Bug 2: retry Redis connection with backoff so the subscriber thread
-# doesn't die silently when Redis isn't ready at container start.
 def connect_redis(retries=10, delay=2):
+    """Connect to Redis with retry/backoff so the container start race doesn't kill the thread."""
     for attempt in range(retries):
         try:
             client = redis.Redis(host=REDIS_HOST, port=REDIS_PORT, decode_responses=True)
@@ -41,7 +42,7 @@ log_lock    = threading.Lock()
 HOT_TIER_THRESHOLD = 3   # promote to RAM cache after this many downloads
 
 def _track_and_promote_hot_file(file_id: str):
-    """Increment download count in Redis and promote to hot_files set when threshold is hit."""
+    """Increment download count in Redis; promote to hot_files set at threshold."""
     try:
         counter_key = f"dl_count:{file_id}"
         count = redis_client.incr(counter_key)
@@ -55,25 +56,34 @@ def _track_and_promote_hot_file(file_id: str):
 # Redis Event Loop / Subscriber
 # ─────────────────────────────────────────────────────────────────────────────
 def run_subscriber():
-    print(f"[AI] Starting subscriber on channels: telemetry_channel, security_events")
-    pubsub = redis_client.pubsub()
-    pubsub.subscribe("telemetry_channel", "security_events")
-
-    for message in pubsub.listen():
-        if message["type"] != "message":
-            continue
-        channel  = message["channel"]
-        data_str = message["data"]
+    """
+    FIX Bug 2: The subscriber loop now catches all exceptions and reconnects
+    instead of dying silently if Redis drops mid-stream.
+    """
+    print("[AI] Starting subscriber on channels: telemetry_channel, security_events")
+    while True:
         try:
-            data = json.loads(data_str)
-        except Exception as e:
-            print(f"[AI] Failed to parse event data: {e}")
-            continue
+            pubsub = redis_client.pubsub()
+            pubsub.subscribe("telemetry_channel", "security_events")
+            for message in pubsub.listen():
+                if message["type"] != "message":
+                    continue
+                channel  = message["channel"]
+                data_str = message["data"]
+                try:
+                    data = json.loads(data_str)
+                except Exception as e:
+                    print(f"[AI] Failed to parse event data: {e}")
+                    continue
 
-        if channel == "telemetry_channel":
-            handle_telemetry(data)
-        elif channel == "security_events":
-            handle_security_event(data)
+                if channel == "telemetry_channel":
+                    handle_telemetry(data)
+                elif channel == "security_events":
+                    handle_security_event(data)
+        except Exception as e:
+            # Connection dropped — log and reconnect after a short delay
+            print(f"[AI] Subscriber loop crashed ({e}), reconnecting in 3s...")
+            time.sleep(3)
 
 
 def handle_telemetry(data):
@@ -101,24 +111,29 @@ def handle_telemetry(data):
         if len(metrics_log) > 200:
             metrics_log.pop(0)
 
-    # 1. Predictive Failure Anomaly Detection
-    is_anomaly    = failure_predictor.predict_anomaly(cpu, ram, disk, latency)
-    health_status = "degraded" if is_anomaly else "healthy"
-    redis_client.hset("node_health_status", node, health_status)
+    # FIX Bug 3: wrap all Redis calls in try/except so a transient Redis
+    # drop doesn't crash the subscriber thread.
+    try:
+        # 1. Predictive Failure Anomaly Detection
+        is_anomaly    = failure_predictor.predict_anomaly(cpu, ram, disk, latency)
+        health_status = "degraded" if is_anomaly else "healthy"
+        redis_client.hset("node_health_status", node, health_status)
 
-    if is_anomaly:
-        publish_alert({
-            "type":    "health_anomaly",
-            "node":    node,
-            "cpu":     cpu, "ram": ram, "disk": disk, "latency": latency,
-            "message": f"Predictive Failure Warning: Anomalous resource utilization detected on node {node}!"
-        })
+        if is_anomaly:
+            publish_alert({
+                "type":    "health_anomaly",
+                "node":    node,
+                "cpu":     cpu, "ram": ram, "disk": disk, "latency": latency,
+                "message": f"Predictive Failure Warning: Anomalous resource utilization detected on node {node}!"
+            })
 
-    # 2. Latency Prediction for Intelligent Load Balancing
-    predicted_1mb_latency  = latency_predictor.predict_latency(cpu, ram, 1.0)
-    predicted_10mb_latency = latency_predictor.predict_latency(cpu, ram, 10.0)
-    redis_client.hset("node_predicted_latency_1mb",  node, str(predicted_1mb_latency))
-    redis_client.hset("node_predicted_latency_10mb", node, str(predicted_10mb_latency))
+        # 2. Latency Prediction for Intelligent Load Balancing
+        predicted_1mb_latency  = latency_predictor.predict_latency(cpu, ram, 1.0)
+        predicted_10mb_latency = latency_predictor.predict_latency(cpu, ram, 10.0)
+        redis_client.hset("node_predicted_latency_1mb",  node, str(predicted_1mb_latency))
+        redis_client.hset("node_predicted_latency_10mb", node, str(predicted_10mb_latency))
+    except Exception as e:
+        print(f"[AI] Redis write error in handle_telemetry: {e}")
 
 
 def handle_security_event(data):
@@ -136,7 +151,10 @@ def handle_security_event(data):
         content  = data.get("content", "")
         is_suspicious, confidence = security_classifier.scan_content(content)
         if is_suspicious:
-            redis_client.sadd("blocked_files", file_id)
+            try:
+                redis_client.sadd("blocked_files", file_id)
+            except Exception as e:
+                print(f"[AI] Redis error blocking file {file_id}: {e}")
             publish_alert({
                 "type":       "malicious_upload",
                 "file_id":    file_id,
@@ -150,13 +168,16 @@ def handle_security_event(data):
         file_id = data.get("file_id")
         action  = data.get("action", "")
 
-        # Track download count to enable hot-tiering (only for downloads, not uploads)
+        # Track download count to enable hot-tiering (only for downloads)
         if action == "download" and file_id:
             _track_and_promote_hot_file(file_id)
 
         # Volumetric anomaly detection
         if ip and access_anomaly_detector.record_access_and_check(ip):
-            redis_client.sadd("blocked_ips", ip)
+            try:
+                redis_client.sadd("blocked_ips", ip)
+            except Exception as e:
+                print(f"[AI] Redis error blocking IP {ip}: {e}")
             publish_alert({
                 "type":    "volumetric_abuse",
                 "ip":      ip,
@@ -167,9 +188,12 @@ def handle_security_event(data):
 def publish_alert(alert: dict):
     alert["timestamp"] = time.strftime("%Y-%m-%d %H:%M:%S")
     alert_str = json.dumps(alert)
-    redis_client.lpush("system_alerts", alert_str)
-    redis_client.ltrim("system_alerts", 0, 99)        # keep last 100 alerts
-    redis_client.publish("alerts_channel", alert_str)
+    try:
+        redis_client.lpush("system_alerts", alert_str)
+        redis_client.ltrim("system_alerts", 0, 99)        # keep last 100 alerts
+        redis_client.publish("alerts_channel", alert_str)
+    except Exception as e:
+        print(f"[AI] Redis error in publish_alert: {e}")
     with log_lock:
         alerts_log.append(alert)
         if len(alerts_log) > 50:
@@ -182,14 +206,23 @@ def publish_alert(alert: dict):
 # ─────────────────────────────────────────────────────────────────────────────
 @app.route("/health")
 def health():
-    return jsonify({"status": "running", "redis_connected": redis_client.ping()}), 200
+    try:
+        connected = redis_client.ping()
+    except Exception:
+        connected = False
+    return jsonify({"status": "running", "redis_connected": connected}), 200
 
 
 @app.route("/status")
 def status():
-    health_states  = redis_client.hgetall("node_health_status")
-    blocked_ips    = list(redis_client.smembers("blocked_ips"))
-    blocked_files  = list(redis_client.smembers("blocked_files"))
+    try:
+        health_states = redis_client.hgetall("node_health_status")
+        blocked_ips   = list(redis_client.smembers("blocked_ips"))
+        blocked_files = list(redis_client.smembers("blocked_files"))
+    except Exception:
+        health_states = {}
+        blocked_ips   = []
+        blocked_files = []
     with log_lock:
         recent_metrics = list(metrics_log)
         recent_alerts  = list(alerts_log)
@@ -204,16 +237,13 @@ def status():
 
 @app.route("/retrain", methods=["POST"])
 def retrain():
-    """Dynamically retrain ML models using accumulated live telemetry data."""
+    """Dynamically retrain local ML models using accumulated live telemetry data."""
     with log_lock:
         records = list(metrics_log)
 
     if not records:
         return jsonify({"error": "No telemetry records collected yet. Models cannot be retrained."}), 400
 
-    # FIX Bug 1: renamed loop variable from 'r' to 'rec' to avoid shadowing the
-    # module-level redis_client variable (previously named 'r'), which would have
-    # silently broken all Redis calls made after the list comprehension.
     cpu_vals     = [rec["cpu"]     for rec in records]
     ram_vals     = [rec["ram"]     for rec in records]
     disk_vals    = [rec["disk"]    for rec in records]
@@ -232,14 +262,13 @@ def retrain():
     all_disk    = disk_vals    + list(base_disk)
     all_latency = latency_vals + list(base_latency)
 
-    # Retrain local Failure Predictor (IsolationForest) - Pattern 3
+    # Retrain local Failure Predictor (IsolationForest) — preserves global benchmark
     X_failure = np.column_stack((all_cpu, all_ram, all_disk, all_latency))
     failure_predictor.local_model.fit(X_failure)
 
-    # Retrain local Latency Predictor (LinearRegression) - Pattern 3
+    # Retrain local Latency Predictor (LinearRegression) — preserves global benchmark
     file_sizes = np.random.uniform(0.1, 10.0, len(all_cpu))
     X_latency  = np.column_stack((all_cpu, all_ram, file_sizes))
-    # Derive realistic labels: latency grows with load and file size
     y_latency  = 0.05 + np.array(all_cpu)*0.001 + np.array(all_ram)*0.0005 + file_sizes*0.003
     y_latency  = np.clip(y_latency, 0.01, 2.0)
     latency_predictor.local_model.fit(X_latency, y_latency)
@@ -263,7 +292,13 @@ def feedback():
     if not data or "content" not in data or "label" not in data:
         return jsonify({"error": "Missing content or label"}), 400
 
-    content = data["content"]
+    content = data.get("content", "").strip()
+
+    # FIX Bug 7 (mirrored here): skip empty content — training on an empty
+    # string shifts the Naive Bayes probability distribution in a meaningless direction.
+    if not content:
+        return jsonify({"status": "skipped", "reason": "Empty content — no learning performed."}), 200
+
     try:
         label = int(data["label"])
         if label not in (0, 1):
@@ -274,7 +309,7 @@ def feedback():
     success = security_classifier.learn_incremental(content, label)
     if success:
         publish_alert({
-            "type": "incremental_learning",
+            "type":    "incremental_learning",
             "message": f"Online Learning: Content security model incrementally trained on new sample (label: {label})."
         })
         return jsonify({"status": "success", "message": "Model updated incrementally."}), 200
@@ -285,13 +320,15 @@ def feedback():
 @app.route("/clear-blocks", methods=["POST"])
 def clear_blocks():
     """Endpoint to clear blocked IPs and files for demonstration/testing ease."""
-    redis_client.delete("blocked_ips")
-    redis_client.delete("blocked_files")
+    try:
+        redis_client.delete("blocked_ips")
+        redis_client.delete("blocked_files")
+    except Exception as e:
+        return jsonify({"error": f"Redis error: {e}"}), 503
     return jsonify({"status": "cleared", "message": "All security blocks cleared."}), 200
 
 
 if __name__ == "__main__":
-    # FIX Bug 2: subscriber thread starts AFTER redis_client is already verified connected
     subscriber_thread = threading.Thread(target=run_subscriber, daemon=True)
     subscriber_thread.start()
     print("[AI] Starting AI Diagnostics Server on port 5200...")

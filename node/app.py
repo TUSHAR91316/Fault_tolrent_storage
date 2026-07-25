@@ -84,50 +84,53 @@ init_db()
 # ─────────────────────────────────────────────────────────────────────────────
 def telemetry_publisher():
     """Background thread that streams node performance metrics to Redis every 5 seconds."""
-    time.sleep(5) # wait for system initialization
+    time.sleep(5)  # wait for system initialization
     while True:
-        # Establish redis if not alive
+        # FIX Bug 9: reconnect under _redis_lock so this thread and the retrieve()
+        # route don't race to reset r_client simultaneously.
         global r_client
         if not r_client:
-            r_client = get_redis_client()
-            
+            with _redis_lock:
+                if not r_client:          # double-checked under lock
+                    r_client = get_redis_client()
+
         try:
             # 1. Gather Resource Metrics (with fallbacks)
             try:
-                cpu = psutil.cpu_percent()
-                ram = psutil.virtual_memory().percent
+                cpu  = psutil.cpu_percent()
+                ram  = psutil.virtual_memory().percent
                 disk = psutil.disk_usage(DATA_DIR).percent
             except Exception:
                 # Fallback to realistic base metrics if psutil struggles inside docker-slim
-                cpu = 15.0
-                ram = 45.0
+                cpu  = 15.0
+                ram  = 45.0
                 disk = 30.0
 
             # 2. Gather DB stats
-            conn = get_db()
-            count = conn.execute("SELECT COUNT(*) as c FROM files").fetchone()['c']
+            conn        = get_db()
+            count       = conn.execute("SELECT COUNT(*) as c FROM files").fetchone()['c']
             total_bytes = conn.execute("SELECT SUM(size) as s FROM files").fetchone()['s'] or 0
             conn.close()
 
             # 3. Calculate latency average
             with _latency_lock:
                 avg_lat = sum(_latencies) / len(_latencies) if _latencies else 0.05
-            
+
             # Publish payload to Redis Pub/Sub
             if r_client:
                 payload = {
-                    "node": NODE_URL,
-                    "cpu": cpu,
-                    "ram": ram,
-                    "disk": disk,
-                    "latency": avg_lat,
-                    "file_count": count,
+                    "node":        NODE_URL,
+                    "cpu":         cpu,
+                    "ram":         ram,
+                    "disk":        disk,
+                    "latency":     avg_lat,
+                    "file_count":  count,
                     "total_bytes": total_bytes
                 }
                 r_client.publish("telemetry_channel", json.dumps(payload))
         except Exception as e:
             app.logger.error("Telemetry publisher encountered error: %s", e)
-            
+
         time.sleep(5)
 
 t = threading.Thread(target=telemetry_publisher, daemon=True)
@@ -266,9 +269,9 @@ def retrieve(file_id):
             _ram_cache[file_id] = file_bytes
         app.logger.info("Intelligent Tiering: Promoted file %s to RAM cache.", row['filename'])
 
-    # Add a simulated disk latency (0.05s) to emphasize RAM-tiering performance boost in monitoring
-    time.sleep(0.05)
-
+    # FIX Bug 10: removed time.sleep(0.05) artificial disk latency — it ran
+    # on every disk-read retrieve path and skewed AI latency predictions with
+    # synthetic delay that doesn't reflect real network or disk performance.
     elapsed = time.time() - start_time
     with _latency_lock:
         _latencies.append(elapsed)
