@@ -1,3 +1,6 @@
 flask
 redis
 psutil
+reedsolo
+cryptography
+prometheus_client

@@ -1,3 +1,6 @@
 flask
 requests
 redis
+reedsolo
+cryptography
+prometheus_client

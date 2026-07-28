@@ -6,7 +6,7 @@ import numpy as np
 import redis
 # FIX Bug 1: 'request' was missing from the Flask import — the /feedback
 # endpoint uses request.get_json() which would NameError on every call.
-from flask import Flask, jsonify, request
+from flask import Flask, jsonify, request, Response
 from models import failure_predictor, latency_predictor, security_classifier, access_anomaly_detector
 
 # Flask App for Diagnostics
@@ -326,6 +326,36 @@ def clear_blocks():
     except Exception as e:
         return jsonify({"error": f"Redis error: {e}"}), 503
     return jsonify({"status": "cleared", "message": "All security blocks cleared."}), 200
+
+
+@app.route("/metrics")
+def metrics():
+    """Prometheus Exposition Format Metrics for AI Analyzer."""
+    with log_lock:
+        metrics_count = len(metrics_log)
+        alerts_count  = len(alerts_log)
+    try:
+        blocked_ips_count   = redis_client.scard("blocked_ips")
+        blocked_files_count = redis_client.scard("blocked_files")
+    except Exception:
+        blocked_ips_count   = 0
+        blocked_files_count = 0
+
+    metrics_text = (
+        f"# HELP fts_ai_telemetry_records_total Telemetry records in memory\n"
+        f"# TYPE fts_ai_telemetry_records_total gauge\n"
+        f'fts_ai_telemetry_records_total{{service="ai_analyzer"}} {metrics_count}\n'
+        f"# HELP fts_ai_alerts_total System alerts count\n"
+        f"# TYPE fts_ai_alerts_total counter\n"
+        f'fts_ai_alerts_total{{service="ai_analyzer"}} {alerts_count}\n'
+        f"# HELP fts_ai_blocked_ips_count Active blacklisted IPs\n"
+        f"# TYPE fts_ai_blocked_ips_count gauge\n"
+        f'fts_ai_blocked_ips_count{{service="ai_analyzer"}} {blocked_ips_count}\n'
+        f"# HELP fts_ai_blocked_files_count Quarantined files count\n"
+        f"# TYPE fts_ai_blocked_files_count gauge\n"
+        f'fts_ai_blocked_files_count{{service="ai_analyzer"}} {blocked_files_count}\n'
+    )
+    return Response(metrics_text, mimetype="text/plain; version=0.0.4; charset=utf-8")
 
 
 if __name__ == "__main__":

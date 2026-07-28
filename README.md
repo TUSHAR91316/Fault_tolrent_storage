@@ -1,4 +1,4 @@
-# 💾 Fault-Tolerant & AI-Secure Distributed Storage System
+# 💾 Fault-Tolerant, AI-Secure & Enterprise Distributed Storage System
 
 ### 🧠 Course: 21CSE479T — Fault Tolerant Systems
 ### 👨‍💻 Developed by: Tushar
@@ -8,66 +8,69 @@
 [![Docker](https://img.shields.io/badge/Docker-Container-2496ED.svg)](https://docker.com)
 [![Redis](https://img.shields.io/badge/Redis-Cache--Broker-DC382D.svg)](https://redis.io)
 [![scikit-learn](https://img.shields.io/badge/scikit--learn-ML--Framework-F7931E.svg)](https://scikit-learn.org)
+[![AES-256-GCM](https://img.shields.io/badge/Encryption-AES--256--GCM-green.svg)]()
+[![Prometheus](https://img.shields.io/badge/Prometheus-Observability-E6522C.svg)](https://prometheus.io)
 
 ---
 
 ## 📖 Overview
 
-The **Fault-Tolerant & AI-Secure File Storage System** is a distributed storage solution designed to provide **reliable data persistence, high availability, automated self-healing, and real-time intelligent threat mitigation**. 
+The **Fault-Tolerant & AI-Secure File Storage System** is an enterprise-grade distributed storage solution providing **low-overhead data persistence, high availability, automated self-healing, Zero-Trust encryption, Reed-Solomon Erasure Coding, and real-time AI threat intelligence**.
 
-Built on a robust Coordinator-Worker architecture and augmented by an asynchronous **AI-Analyzer** service communicating via **Redis**, the system guarantees secure replication, load-balanced routing, predictive failure detection, and active defense boundaries.
+Built on a Coordinator-Worker architecture with an asynchronous **AI-Analyzer** microservice communicating over **Redis**, the system pairs static pre-trained benchmark models with live local adaptation (**Pattern 2 Incremental Learning & Pattern 3 Model Ensembling**).
 
 ---
 
-## ✨ Advanced Features & Upgrades
+## ✨ Enterprise Features & Architectural Capabilities
 
-| Feature | Description |
-| :--- | :--- |
-| 🧱 **Triple Replication** | Files are redundantly stored across **3 independent storage nodes**. |
-| ⚡ **Parallel Replication** | Uploads utilize `ThreadPoolExecutor` to stream data to all nodes simultaneously, drastically cutting down latency. |
-| 🩺 **Automated Self-Healing** | A background daemon continuously monitors node health. If a node fails and recovers, the coordinator automatically syncs missing files from donor replicas. |
-| 🧠 **Predictive Node Failure** | The AI service uses an **Isolation Forest** model to detect anomalous resource usage, marking nodes as *degraded* and routing traffic away *before* a crash. |
-| ⚖️ **Intelligent Load Balancing** | A **Linear Regression** model predicts retrieval latency for each node based on real-time CPU/RAM load. Reads are routed to the node predicted to respond fastest. |
-| 🚀 **RAM-Hot Data Tiering** | Identifies frequently requested files and caches them in high-speed RAM. Retrieval skips simulated disk seek latency (0.05s) for instant delivery. |
-| 🛡️ **Dual-Layer Active Defense** | Enforces instant threat mitigation: blacklists malicious uploads via a char-level **Naive Bayes** classifier, and blacklists client IPs triggering volumetric access anomalies. |
-| 🗄️ **SQLite WAL Metadata** | Thread-safe, atomic SQLite databases using Write-Ahead Logging (WAL) for lock-free, high-concurrency read/write operations. |
-| 🗂️ **File Versioning** | Bumps the version integer automatically when files with duplicate names are uploaded, retaining historical records. |
-| 🌊 **Memory-Safe Streaming** | Employs 64KB chunked streaming for transfers, guaranteeing zero Out-Of-Memory (OOM) errors. |
-| 🌐 **Modern Security Dashboard** | A dark-themed responsive dashboard displaying real-time node health, live AI logs, blacklisted clients, quarantined files, and throughput telemetry. |
+| Capability | Category | Technical Description |
+| :--- | :--- | :--- |
+| 🧩 **Reed-Solomon Erasure Coding** | Storage Efficiency | Splits payloads into $K=2$ Data shards + $M=1$ Parity shard. Cuts storage overhead from **300% to 150%** while surviving any single node crash with zero data loss. |
+| 🔐 **Zero-Trust AES-256-GCM Encryption** | Security | 256-bit AES-GCM payload encryption at the coordinator layer before shard generation. Storage nodes store only ciphertext. Authenticated tags ensure cryptographic tamper-resistance. |
+| 🔑 **RBAC & API Key Authorization** | Access Control | Role-Based Access Control enforcing `Admin` (`admin-secret-key-99`), `Writer` (`writer-secret-key-55`), and `Reader` (`reader-secret-key-11`) roles via `X-API-Key` HTTP headers. |
+| 📊 **Prometheus Observability** | Monitoring | Standardized `/metrics` exposition endpoints across Coordinator (:5000), Storage Nodes (:5100), and AI-Analyzer (:5200) for Grafana/Prometheus scraping. |
+| 🧠 **Hybrid Ensembled AI (Pattern 3)** | Machine Learning | Pairs pre-trained cloud benchmarks (`global_model`) with local node metrics (`local_model`) via weighted scoring for Isolation Forest failure prediction and Linear Regression latency estimation. |
+| ⚡ **Online Incremental Learning (Pattern 2)** | Machine Learning | Uses stateless `HashingVectorizer` and `MultinomialNB.partial_fit()` to dynamically learn clean/suspicious document signatures from upload feedback in real time. |
+| 🩺 **Automated Self-Healing** | Resilience | Background monitor reconstructs missing/corrupted shards on recovered nodes using Reed-Solomon equations. |
+| 🚀 **RAM Hot-Data Tiering** | Performance | Promotes high-frequency requested files to RAM cache once download counts hit thresholds. |
+| 🛡️ **Active Defense** | Threat Mitigation | Blacklists malicious uploads via Naive Bayes and bans client IPs triggering volumetric access anomalies (>15 req / 10s). |
+| 🗄️ **SQLite WAL Metadata** | Database | Thread-safe, lock-free SQLite storage using Write-Ahead Logging (WAL) for atomic schema and versioning transactions. |
 
 ---
 
 ## 🏗️ System Architecture
 
-The cluster consists of a Coordinator, three Storage Workers, a Redis message broker/state store, and a dedicated AI-Analyzer container:
-
 ```text
-                     ┌──────────────────┐
-                     │  Client Browser  │
-                     └────────┬─────────┘
-                              │ (HTTP Requests)
-                              ▼
-                     ┌──────────────────┐
-                     │   Coordinator    │
-                     └────────┬─────────┘
-         ┌────────────────────┼────────────────────┐
-         │ (HTTP Store/Get)   │ (HTTP Store/Get)   │ (HTTP Store/Get)
-         ▼                    ▼                    ▼
-   ┌───────────┐        ┌───────────┐        ┌───────────┐
-   │  Node 1   │        │  Node 2   │        │  Node 3   │
-   └─────┬─────┘        └─────┬─────┘        └─────┬─────┘
-         │                    │                    │
-         └──────────┐         │         ┌──────────┘
-                    │         │         │ (Publishes Telemetry & Events)
-                    ▼         ▼         ▼
-               ┌─────────────────────────────┐
-               │    Redis Message Broker     │
-               └──────────────┬──────────────┘
-                              │ (Subscribes to Events)
-                              ▼
-               ┌─────────────────────────────┐
-               │     AI-Analyzer Daemon      │
-               └─────────────────────────────┘
+                                  ┌──────────────────┐
+                                  │  Client Browser  │
+                                  └────────┬─────────┘
+                                           │ (HTTP Requests + X-API-Key)
+                                           ▼
+                                  ┌──────────────────┐
+                                  │   Coordinator    │
+                                  │  (AES-256-GCM &  │
+                                  │  Erasure Coding) │
+                                  └────────┬─────────┘
+          ┌────────────────────────────────┼────────────────────────────────┐
+          │ (Shard 0)                      │ (Shard 1)                      │ (Parity Shard 2)
+          ▼                                ▼                                ▼
+    ┌───────────┐                    ┌───────────┐                    ┌───────────┐
+    │  Node 1   │                    │  Node 2   │                    │  Node 3   │
+    └─────┬─────┘                    └─────┬─────┘                    └─────┬─────┘
+          │                                │                                │
+          └──────────────────────┐         │         ┌──────────────────────┘
+                                 │         │         │ (Publishes Telemetry & Events)
+                                 ▼         ▼         ▼
+                            ┌─────────────────────────────┐
+                            │    Redis Message Broker     │
+                            └──────────────┬──────────────┘
+                                           │ (Subscribes to Channels)
+                                           ▼
+                            ┌─────────────────────────────┐
+                            │     AI-Analyzer Daemon      │
+                            │   (Ensembled ML Models &    │
+                            │   Incremental Learning)     │
+                            └─────────────────────────────┘
 ```
 
 ---
@@ -76,23 +79,28 @@ The cluster consists of a Coordinator, three Storage Workers, a Redis message br
 
 ```text
 fault_tolerant_storage/
-├── docker-compose.yml       # Multi-container orchestration (adds redis & ai-analyzer)
-├── README.md                # Project documentation
+├── docker-compose.yml       # Multi-container orchestration (coordinator, 3 nodes, redis, ai-analyzer)
+├── README.md                # Main documentation
 ├── ai/
 │   ├── Dockerfile
 │   ├── requirements.txt
-│   ├── models.py            # ML model definitions (Failure, Latency, Content, Volumetric)
-│   ├── analyzer.py          # Redis Pub/Sub subscriber & Flask status diagnostic server
+│   ├── models.py            # Ensembled & Incremental ML models (Pattern 2 & 3)
+│   ├── analyzer.py          # Subscriber, Flask diagnostics, Prometheus /metrics
+│   ├── test_hybrid.py       # Hybrid AI model unit verification script
 │   └── README.md            # Detailed AI subsystem guide
 ├── coordinator/
-│   ├── app.py               # Coordinator routing, SQLite storage, Redis security calls
+│   ├── app.py               # Coordinator REST API, SQLite WAL, Erasure & Encryption pipelines
+│   ├── security_ec.py       # Zero-Trust AES-256-GCM, Reed-Solomon K+M Sharding, RBAC
+│   ├── metrics.py          # Prometheus exposition metrics exporter
 │   ├── Dockerfile
 │   ├── requirements.txt
 │   └── templates/           # Real-time Security Dashboard UI
 ├── node/
-│   ├── app.py               # Node storage logic, RAM hot-cache, telemetry streaming
+│   ├── app.py               # Node shard storage, RAM hot-tiering, Prometheus /metrics
 │   ├── Dockerfile
 │   └── requirements.txt
+└── tests/
+    └── test_enterprise_phase4.py  # Phase 4 end-to-end integration test suite
 ```
 
 ---
@@ -102,43 +110,38 @@ fault_tolerant_storage/
 1. **Clone the repository:**
    ```bash
    git clone https://github.com/TUSHAR91316/Fault_tolrent_storage.git
-   cd fault_tolrent_storage
+   cd Fault_tolrent_storage
    ```
 
-2. **Build and start the cluster:**
+2. **Build and launch the cluster:**
    ```bash
    docker compose up --build -d
    ```
 
-3. **Verify running containers:**
+3. **Verify running services:**
    ```bash
    docker ps
    ```
-   You should see 6 containers running: `coordinator`, `node1`, `node2`, `node3`, `redis`, and `ai-analyzer`.
+   You will see 6 microservices running: `coordinator`, `node1`, `node2`, `node3`, `redis`, and `ai-analyzer`.
 
-4. **Access the Dashboard:**
-   👉 Main Web Dashboard: [http://localhost:5000](http://localhost:5000)
-   👉 AI Diagnostics Panel: [http://localhost:5200/status](http://localhost:5200/status)
+4. **Access Dashboard & Exporters:**
+   - 🖥️ **Web Dashboard:** [http://localhost:5000](http://localhost:5000)
+   - 📊 **Coordinator Prometheus Metrics:** [http://localhost:5000/metrics](http://localhost:5000/metrics)
+   - 🧠 **AI Diagnostics & Metrics:** [http://localhost:5200/metrics](http://localhost:5200/metrics)
+   - 💾 **Storage Node 1 Metrics:** [http://localhost:5100/metrics](http://localhost:5100/metrics)
 
 ---
 
-## 🧪 Testing AI & Fault Tolerance
+## 🧪 Verification & Unit Testing
 
-### 1. Verification of Active Defense (Malware Quarantine)
-- Create a text file containing the pattern `SUSPICIOUS_PATTERN_TYPE_X_PAYLOAD`.
-- Attempt to upload it via the dashboard.
-- The upload is intercepted by the Naive Bayes classifier, blocked, and quarantined. You will see a security alert appear instantly on the dashboard under **AI Security & Active Defense**!
+### 1. Run Phase 4 Enterprise Integration Test Suite
+```bash
+python tests/test_enterprise_phase4.py
+```
+*Verifies AES-256-GCM encryption/tamper-resistance, Reed-Solomon erasure reconstruction under simulated node crashes, RBAC authorization, and Prometheus metrics exposition format.*
 
-### 2. Verification of Active Defense (IP Blacklisting)
-- Download a file rapidly (more than 15 requests in 10 seconds).
-- The AI-Analyzer flags the access anomaly and blacklists the client's IP in Redis.
-- Subsequent requests from the client return a `403 Forbidden` error. Click **Clear Blocks** on the dashboard to unban the IP.
-
-### 3. Verification of Intelligent RAM Hot-Tiering
-- Upload a file and download it once. The first retrieve takes ~50ms (simulated disk seek).
-- Download it a few more times. Once the access count increments, the node promotes the file to RAM cache.
-- Observe the download latency. Retrieve operations drop to <2ms, and the card's estimated latency indicator shifts.
-
-### 4. Verification of Predictive Node Failure
-- Stop a node manually: `docker stop fault_tolrent_storage-node2-1`.
-- Restart the node. As it restarts, monitor the logs or the diagnostic status. If the resources behave anomalously during boots, the Isolation Forest alerts the coordinator, marking it as degraded.
+### 2. Run Hybrid AI Verification Test Suite
+```bash
+python ai/test_hybrid.py
+```
+*Verifies Ensembled Isolation Forest anomaly scoring, Ensembled Linear Regression latency prediction, and Naive Bayes online incremental learning via `partial_fit`.*

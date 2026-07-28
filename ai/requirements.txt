@@ -1,6 +1,5 @@
+flask
 redis
-scikit-learn
-pandas
 numpy
-requests
-psutil
+scikit-learn
+prometheus_client

@@ -7,7 +7,7 @@ Upgrades implemented:
   7. Redis integration for Telemetry stream and Intelligent caching (RAM hot-tiering)
 """
 
-from flask import Flask, request, jsonify, send_file
+from flask import Flask, request, jsonify, send_file, Response
 import os, sqlite3, hashlib, threading, time, logging, json
 from io import BytesIO
 from datetime import datetime
@@ -327,13 +327,29 @@ def checkpoint():
 def health():
     return 'OK', 200
 
-@app.route('/stats')
-def stats():
-    conn  = get_db()
+@app.route('/metrics')
+def metrics():
+    """Prometheus Exposition Format Metrics for Storage Node."""
+    conn = get_db()
     count = conn.execute("SELECT COUNT(*) as c FROM files").fetchone()['c']
     total = conn.execute("SELECT SUM(size) as s FROM files").fetchone()['s'] or 0
     conn.close()
-    return jsonify({'files': count, 'total_bytes': total})
+    
+    with _cache_lock:
+        cache_count = len(_ram_cache)
+        
+    metrics_text = (
+        f"# HELP fts_node_shards_total Total storage shards stored\n"
+        f"# TYPE fts_node_shards_total counter\n"
+        f'fts_node_shards_total{{node="{NODE_URL}"}} {count}\n'
+        f"# HELP fts_node_bytes_total Total bytes stored\n"
+        f"# TYPE fts_node_bytes_total counter\n"
+        f'fts_node_bytes_total{{node="{NODE_URL}"}} {total}\n'
+        f"# HELP fts_node_ram_cache_items RAM cache items count\n"
+        f"# TYPE fts_node_ram_cache_items gauge\n"
+        f'fts_node_ram_cache_items{{node="{NODE_URL}"}} {cache_count}\n'
+    )
+    return Response(metrics_text, mimetype="text/plain; version=0.0.4; charset=utf-8")
 
 
 if __name__ == '__main__':
