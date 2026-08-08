@@ -32,8 +32,11 @@ REDIS_PORT = int(os.environ.get("REDIS_PORT", 6379))
 _latency_lock = threading.Lock()
 _latencies = []
 
-# In-memory RAM Cache for Intelligent Hot-Tiering
-_ram_cache  = {}
+from collections import OrderedDict
+
+# In-memory RAM Cache for Intelligent Hot-Tiering (LRU Eviction, max 100 items)
+MAX_RAM_CACHE_ITEMS = 100
+_ram_cache  = OrderedDict()
 _cache_lock = threading.Lock()
 
 # Redis reconnect lock — prevents multiple threads racing to reset r_client
@@ -212,6 +215,7 @@ def retrieve(file_id):
         in_cache = file_id in _ram_cache
         if in_cache:
             file_data = _ram_cache[file_id]
+            _ram_cache.move_to_end(file_id)  # Touch item for LRU ordering
 
     if in_cache:
         # Stream from memory buffer (RAM retrieval)
@@ -256,9 +260,6 @@ def retrieve(file_id):
     is_hot = False
     if r_client:
         try:
-            # Let's count downloads dynamically or use direct set verification
-            # If the download count crosses 3, the AI service classifies it as hot
-            # Or we check the Redis set directly
             if r_client.sismember("hot_files", file_id):
                 is_hot = True
         except Exception:
@@ -267,6 +268,9 @@ def retrieve(file_id):
     if is_hot:
         with _cache_lock:
             _ram_cache[file_id] = file_bytes
+            _ram_cache.move_to_end(file_id)
+            if len(_ram_cache) > MAX_RAM_CACHE_ITEMS:
+                _ram_cache.popitem(last=False)  # Evict least recently used file
         app.logger.info("Intelligent Tiering: Promoted file %s to RAM cache.", row['filename'])
 
     # FIX Bug 10: removed time.sleep(0.05) artificial disk latency — it ran

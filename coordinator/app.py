@@ -37,9 +37,19 @@ NODES = os.environ.get(
     'http://node1:5100,http://node2:5100,http://node3:5100'
 ).split(',')
 
+from requests.adapters import HTTPAdapter
+
 # Default Erasure Coding parameters (K=2 Data Shards, M=1 Parity Shard)
 DEFAULT_K = 2
 DEFAULT_M = 1
+
+# High-Performance Connection & Thread Pools
+GLOBAL_THREAD_POOL = ThreadPoolExecutor(max_workers=16)
+
+http_session = requests.Session()
+adapter = HTTPAdapter(pool_connections=20, pool_maxsize=30, max_retries=2)
+http_session.mount('http://', adapter)
+http_session.mount('https://', adapter)
 
 # ─────────────────────────────────────────────────────────────────────────────
 # Redis Integration & Retry Connection
@@ -173,7 +183,7 @@ def _do_recovery(node_url: str):
                     shards_buf.append(None)
                     continue
                 try:
-                    s_r = requests.get(f"{n}/store/{row['file_id']}_shard_{idx}", timeout=5)
+                    s_r = http_session.get(f"{n}/store/{row['file_id']}_shard_{idx}", timeout=5)
                     if s_r.status_code == 200:
                         shards_buf.append(s_r.content)
                     else:
@@ -188,7 +198,7 @@ def _do_recovery(node_url: str):
                 resharded = shard_payload(reconstructed, k=DEFAULT_K, m=DEFAULT_M)
                 target_shard_bytes = resharded[node_idx] if node_idx < len(resharded) else resharded[0]
 
-                pr = requests.post(
+                pr = http_session.post(
                     f"{node_url}/store",
                     files={'file': (f"{row['filename']}.shard", target_shard_bytes)},
                     data={'file_id': shard_file_id},
@@ -222,7 +232,7 @@ def health_monitor():
     while True:
         for node in NODES:
             try:
-                r = requests.get(f"{node}/health", timeout=3)
+                r = http_session.get(f"{node}/health", timeout=3)
                 http_ok = r.status_code == 200
             except Exception:
                 http_ok = False
@@ -269,7 +279,7 @@ threading.Thread(target=health_monitor, daemon=True).start()
 def _store_shard_on_node(node: str, filename: str, shard_bytes: bytes, shard_file_id: str):
     """Upload an encrypted Erasure Coding shard to a single node."""
     try:
-        r = requests.post(
+        r = http_session.post(
             f"{node}/store",
             files={'file': (f"{filename}.shard", BytesIO(shard_bytes))},
             data={'file_id': shard_file_id},
@@ -355,17 +365,16 @@ def upload():
 
     # Step 3: Parallel Shard Placement across nodes
     stored_nodes = []
-    with ThreadPoolExecutor(max_workers=len(NODES)) as executor:
-        futures = {}
-        for idx, shard_b in enumerate(shards):
-            target_node = NODES[idx % len(NODES)]
-            shard_id = f"{file_id}_shard_{idx}"
-            futures[executor.submit(_store_shard_on_node, target_node, filename, shard_b, shard_id)] = target_node
+    futures = {}
+    for idx, shard_b in enumerate(shards):
+        target_node = NODES[idx % len(NODES)]
+        shard_id = f"{file_id}_shard_{idx}"
+        futures[GLOBAL_THREAD_POOL.submit(_store_shard_on_node, target_node, filename, shard_b, shard_id)] = target_node
 
-        for future in as_completed(futures):
-            res = future.result()
-            if res:
-                stored_nodes.append(res)
+    for future in as_completed(futures):
+        res = future.result()
+        if res:
+            stored_nodes.append(res)
 
     if not stored_nodes:
         return jsonify({'error': 'Failed to store file shards on storage nodes'}), 500
@@ -393,7 +402,7 @@ def upload():
     # Report clean upload for Incremental Learning (Pattern 2)
     if content_sample.strip():
         try:
-            requests.post("http://ai-analyzer:5200/feedback", json={
+            http_session.post("http://ai-analyzer:5200/feedback", json={
                 "content": content_sample[:10000],
                 "label": 0
             }, timeout=2)
@@ -452,21 +461,20 @@ def download(file_id):
         target_node = NODES[idx % len(NODES)]
         shard_id = f"{file_id}_shard_{idx}"
         try:
-            r = requests.get(f"{target_node}/store/{shard_id}", timeout=6)
+            r = http_session.get(f"{target_node}/store/{shard_id}", timeout=6)
             if r.status_code == 200:
                 return idx, r.content
         except Exception:
             pass
         return idx, None
 
-    with ThreadPoolExecutor(max_workers=shard_count) as executor:
-        futures = [executor.submit(_fetch_shard, idx) for idx in range(shard_count)]
-        for future in as_completed(futures):
-            idx, b_content = future.result()
-            if b_content:
-                shards_buf[idx] = b_content
-            else:
-                missing_count += 1
+    futures = [GLOBAL_THREAD_POOL.submit(_fetch_shard, idx) for idx in range(shard_count)]
+    for future in as_completed(futures):
+        idx, b_content = future.result()
+        if b_content:
+            shards_buf[idx] = b_content
+        else:
+            missing_count += 1
 
     # Reconstruct encrypted payload using Reed-Solomon Erasure Coding
     try:
@@ -523,14 +531,13 @@ def checkpoint_all():
     results = {}
     def _ckpt(node):
         try:
-            r = requests.post(f"{node}/checkpoint", timeout=10)
+            r = http_session.post(f"{node}/checkpoint", timeout=10)
             return node, r.json()
         except Exception as e:
             return node, str(e)
 
-    with ThreadPoolExecutor(max_workers=len(NODES)) as executor:
-        for node, result in executor.map(lambda n: _ckpt(n), NODES):
-            results[node] = result
+    for node, result in GLOBAL_THREAD_POOL.map(lambda n: _ckpt(n), NODES):
+        results[node] = result
 
     return jsonify({'status': 'checkpoint triggered', 'results': results})
 
@@ -591,7 +598,7 @@ def ai_status_api():
 @app.route('/retrain-ai', methods=['POST'])
 def retrain_ai():
     try:
-        r = requests.post("http://ai-analyzer:5200/retrain", timeout=10)
+        r = http_session.post("http://ai-analyzer:5200/retrain", timeout=10)
         return jsonify(r.json()), r.status_code
     except Exception as e:
         app.logger.error("Failed to retrain AI: %s", e)

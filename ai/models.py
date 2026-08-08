@@ -128,8 +128,9 @@ class ContentClassifier:
     def __init__(self):
         # HashingVectorizer is stateless and does not need vocabulary mapping.
         # alternate_sign=False required: MultinomialNB needs non-negative inputs.
+        # Optimized to 2^12 (4096 features) for minimal hash collisions & high precision.
         self.vectorizer = HashingVectorizer(
-            alternate_sign=False, n_features=2**10,
+            alternate_sign=False, n_features=2**12,
             analyzer='char_wb', ngram_range=(2, 4)
         )
         self.classifier = None

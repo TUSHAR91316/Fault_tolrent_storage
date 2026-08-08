@@ -10,6 +10,7 @@ import os
 import hashlib
 import hmac
 import secrets
+import threading
 from typing import List, Optional, Tuple, Dict
 
 # Try loading enterprise dependencies with robust native fallbacks
@@ -20,7 +21,7 @@ except ImportError:
     HAS_CRYPTOGRAPHY = False
 
 try:
-    import reedsolo
+    import reedsolo  # type: ignore
     HAS_REEDSOLO = True
 except ImportError:
     HAS_REEDSOLO = False
@@ -88,6 +89,18 @@ def decrypt_payload(ciphertext_with_tag: bytes, nonce: bytes, key: bytes = MASTE
             
         return bytes(a ^ b for a, b in zip(encrypted, keystream[:len(encrypted)]))
 
+# RSCodec Instance Cache to avoid re-initializing Galois Field lookup tables on every chunk
+_RS_CODEC_CACHE: Dict[int, object] = {}
+_RS_CACHE_LOCK = threading.Lock()
+
+def _get_rs_codec(m: int):
+    if not HAS_REEDSOLO:
+        return None
+    with _RS_CACHE_LOCK:
+        if m not in _RS_CODEC_CACHE:
+            _RS_CODEC_CACHE[m] = reedsolo.RSCodec(m)
+        return _RS_CODEC_CACHE[m]
+
 # ─────────────────────────────────────────────────────────────────────────────
 # 2. Reed-Solomon K+M Erasure Coding Engine
 # ─────────────────────────────────────────────────────────────────────────────
@@ -98,7 +111,7 @@ def shard_payload(data: bytes, k: int = 2, m: int = 1) -> List[bytes]:
     Each shard begins with a 4-byte header encoding original shard length.
     """
     if HAS_REEDSOLO and k >= 1 and m >= 1:
-        rs = reedsolo.RSCodec(m)
+        rs = _get_rs_codec(m)
         # Calculate chunk size per data shard
         data_len = len(data)
         chunk_size = (data_len + k - 1) // k if k > 0 else data_len
@@ -152,7 +165,7 @@ def reconstruct_payload(shards: List[Optional[bytes]], k: int = 2, m: int = 1) -
     chunk_size = len(first_valid[4:])
     
     if HAS_REEDSOLO and k >= 1 and m >= 1:
-        rs = reedsolo.RSCodec(m)
+        rs = _get_rs_codec(m)
         reconstructed_data_shards = [None] * k
         
         # Check which data shards are present
