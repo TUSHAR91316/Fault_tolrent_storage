@@ -1,0 +1,49 @@
+[build-system]
+requires = ["setuptools>=61.0", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "fault-tolerant-storage"
+version = "1.0.0"
+description = "Enterprise Fault-Tolerant Distributed Storage System with Reed-Solomon Erasure Coding, Zero-Trust AES-256-GCM Encryption, and Hybrid AI Threat Intelligence"
+readme = "README.md"
+requires-python = ">=3.9"
+license = "MIT"
+authors = [
+    { name = "Tushar" }
+]
+classifiers = [
+    "Development Status :: 5 - Production/Stable",
+    "Intended Audience :: Developers",
+    "Topic :: System :: Distributed Computing",
+    "Topic :: Security :: Cryptography",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3.13"
+]
+dependencies = [
+    "flask>=3.0.0",
+    "requests>=2.31.0",
+    "redis>=5.0.0",
+    "psutil>=5.9.0",
+    "numpy>=1.24.0",
+    "scikit-learn>=1.3.0",
+    "reedsolo>=1.7.0",
+    "cryptography>=41.0.0",
+    "prometheus-client>=0.19.0"
+]
+
+[project.scripts]
+fts-coordinator = "coordinator.app:main"
+fts-node = "node.app:main"
+fts-analyzer = "ai.analyzer:main"
+
+[tool.setuptools.packages.find]
+where = ["."]
+include = ["coordinator*", "node*", "ai*"]
+
+[project.urls]
+Homepage = "https://github.com/TUSHAR91316/Fault_tolrent_storage"
+Repository = "https://github.com/TUSHAR91316/Fault_tolrent_storage.git"

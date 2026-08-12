@@ -1,12 +1,26 @@
-FROM python:3.13-slim
+# Stage 1: Build Stage
+FROM python:3.11-slim AS builder
 
 WORKDIR /app
+COPY requirements.txt .
+RUN pip install --no-cache-dir --prefix=/install -r requirements.txt
+
+# Stage 2: Production Security-Hardened Runner
+FROM python:3.11-slim AS runner
+
+WORKDIR /app
+COPY --from=builder /install /usr/local
 COPY . /app
 
-RUN pip install --no-cache-dir flask
+# Create non-root user for security compliance
+RUN groupadd -r appgroup && useradd -r -g appgroup appuser \
+    && mkdir -p /data && chown -R appuser:appgroup /app /data
 
-USER root
-RUN mkdir -p /data && chmod -R 777 /data
+USER appuser
 
 EXPOSE 5100
+
+HEALTHCHECK --interval=15s --timeout=3s --start-period=10s --retries=3 \
+    CMD python -c "import urllib.request; urllib.request.urlopen('http://localhost:5100/health')" || exit 1
+
 CMD ["python", "app.py"]

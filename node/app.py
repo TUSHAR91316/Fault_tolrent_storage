@@ -356,5 +356,9 @@ def metrics():
     return Response(metrics_text, mimetype="text/plain; version=0.0.4; charset=utf-8")
 
 
-if __name__ == '__main__':
+def main():
     app.run(host='0.0.0.0', port=5100, threaded=True)
+
+
+if __name__ == '__main__':
+    main()

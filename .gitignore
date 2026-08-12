@@ -1,0 +1,27 @@
+# Byte-compiled / optimized / DLL files
+__pycache__/
+*.py[cod]
+*$py.class
+
+# PyPI Build & Distribution Artifacts
+build/
+bdist/
+dist/
+*.egg-info/
+.eggs/
+
+# Database & Persistent Data Directories
+/data/
+*.db
+*.sqlite3
+
+# Virtual Environments
+venv/
+.venv/
+env/
+
+# IDE & OS Caches
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db

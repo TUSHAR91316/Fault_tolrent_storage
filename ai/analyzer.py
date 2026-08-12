@@ -358,8 +358,12 @@ def metrics():
     return Response(metrics_text, mimetype="text/plain; version=0.0.4; charset=utf-8")
 
 
-if __name__ == "__main__":
+def main():
     subscriber_thread = threading.Thread(target=run_subscriber, daemon=True)
     subscriber_thread.start()
     print("[AI] Starting AI Diagnostics Server on port 5200...")
     app.run(host="0.0.0.0", port=5200)
+
+
+if __name__ == "__main__":
+    main()

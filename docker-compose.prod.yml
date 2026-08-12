@@ -1,0 +1,151 @@
+version: '3.8'
+
+services:
+  redis:
+    image: redis:7-alpine
+    container_name: fts-redis
+    restart: unless-stopped
+    ports:
+      - "6379:6379"
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 3s
+      retries: 3
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+  ai-analyzer:
+    build:
+      context: ./ai
+      dockerfile: Dockerfile
+    image: tushar/fts-ai-analyzer:latest
+    container_name: fts-ai-analyzer
+    restart: unless-stopped
+    ports:
+      - "5200:5200"
+    environment:
+      - REDIS_HOST=redis
+      - REDIS_PORT=6379
+    depends_on:
+      redis:
+        condition: service_healthy
+    volumes:
+      - ai_data:/data
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+  coordinator:
+    build:
+      context: ./coordinator
+      dockerfile: Dockerfile
+    image: tushar/fts-coordinator:latest
+    container_name: fts-coordinator
+    restart: unless-stopped
+    ports:
+      - "5000:5000"
+    environment:
+      - NODE_URLS=http://node1:5100,http://node2:5100,http://node3:5100
+      - REDIS_HOST=redis
+      - REDIS_PORT=6379
+    depends_on:
+      redis:
+        condition: service_healthy
+      node1:
+        condition: service_healthy
+      node2:
+        condition: service_healthy
+      node3:
+        condition: service_healthy
+    volumes:
+      - coordinator_data:/data
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+  node1:
+    build:
+      context: ./node
+      dockerfile: Dockerfile
+    image: tushar/fts-node:latest
+    container_name: fts-node1
+    restart: unless-stopped
+    ports:
+      - "5101:5100"
+    environment:
+      - REDIS_HOST=redis
+      - REDIS_PORT=6379
+      - NODE_URL=http://node1:5100
+    depends_on:
+      redis:
+        condition: service_healthy
+    volumes:
+      - node1_data:/data
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+  node2:
+    build:
+      context: ./node
+      dockerfile: Dockerfile
+    image: tushar/fts-node:latest
+    container_name: fts-node2
+    restart: unless-stopped
+    ports:
+      - "5102:5100"
+    environment:
+      - REDIS_HOST=redis
+      - REDIS_PORT=6379
+      - NODE_URL=http://node2:5100
+    depends_on:
+      redis:
+        condition: service_healthy
+    volumes:
+      - node2_data:/data
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+  node3:
+    build:
+      context: ./node
+      dockerfile: Dockerfile
+    image: tushar/fts-node:latest
+    container_name: fts-node3
+    restart: unless-stopped
+    ports:
+      - "5103:5100"
+    environment:
+      - REDIS_HOST=redis
+      - REDIS_PORT=6379
+      - NODE_URL=http://node3:5100
+    depends_on:
+      redis:
+        condition: service_healthy
+    volumes:
+      - node3_data:/data
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+volumes:
+  coordinator_data:
+  node1_data:
+  node2_data:
+  node3_data:
+  ai_data:

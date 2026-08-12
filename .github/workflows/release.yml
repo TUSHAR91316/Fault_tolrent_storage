@@ -1,0 +1,97 @@
+name: Release Package & Docker CI/CD
+
+on:
+  push:
+    branches: [ main ]
+    tags:
+      - 'v*'
+  pull_request:
+    branches: [ main ]
+
+jobs:
+  test-and-build:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python 3.11
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+          cache: 'pip'
+
+      - name: Install Dependencies & Package
+        run: |
+          python -m pip install --upgrade pip build setuptools wheel
+          pip install -e .
+
+      - name: Run Enterprise Integration Tests
+        run: |
+          python tests/test_enterprise_phase4.py
+          python ai/test_hybrid.py
+
+      - name: Build PyPI Package Artifacts
+        run: |
+          python -m build
+
+      - name: Upload Package Artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: python-package-distributions
+          path: dist/
+
+  docker-build:
+    needs: test-and-build
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@v4
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Build Coordinator Container Image
+        uses: docker/build-push-action@v5
+        with:
+          context: ./coordinator
+          file: ./coordinator/Dockerfile
+          push: false
+          tags: fts-coordinator:latest
+
+      - name: Build Storage Node Container Image
+        uses: docker/build-push-action@v5
+        with:
+          context: ./node
+          file: ./node/Dockerfile
+          push: false
+          tags: fts-node:latest
+
+      - name: Build AI Analyzer Container Image
+        uses: docker/build-push-action@v5
+        with:
+          context: ./ai
+          file: ./ai/Dockerfile
+          push: false
+          tags: fts-ai-analyzer:latest
+
+  create-github-release:
+    needs: [test-and-build, docker-build]
+    if: startsWith(github.ref, 'refs/tags/v')
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@v4
+
+      - name: Download Built Artifacts
+        uses: actions/download-artifact@v4
+        with:
+          name: python-package-distributions
+          path: dist/
+
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v1
+        with:
+          files: dist/*
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
