@@ -7,7 +7,10 @@ import redis
 # FIX Bug 1: 'request' was missing from the Flask import — the /feedback
 # endpoint uses request.get_json() which would NameError on every call.
 from flask import Flask, jsonify, request, Response
-from models import failure_predictor, latency_predictor, security_classifier, access_anomaly_detector
+try:
+    from ai.models import failure_predictor, latency_predictor, security_classifier, access_anomaly_detector
+except ImportError:
+    from models import failure_predictor, latency_predictor, security_classifier, access_anomaly_detector  # type: ignore
 
 # Flask App for Diagnostics
 app = Flask(__name__)

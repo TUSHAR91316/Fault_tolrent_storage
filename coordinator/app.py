@@ -15,12 +15,19 @@ from datetime import datetime
 from concurrent.futures import ThreadPoolExecutor, as_completed
 import redis
 
-# Import Phase 4 Enterprise Modules
-from security_ec import (
-    encrypt_payload, decrypt_payload, shard_payload, reconstruct_payload,
-    authenticate_api_key, check_permission
-)
-from metrics import coordinator_metrics
+# Import Phase 4 Enterprise Modules (Dual-mode: Package & Container Standalone)
+try:
+    from coordinator.security_ec import (
+        encrypt_payload, decrypt_payload, shard_payload, reconstruct_payload,
+        authenticate_api_key, check_permission
+    )
+    from coordinator.metrics import coordinator_metrics
+except ImportError:
+    from security_ec import (  # type: ignore
+        encrypt_payload, decrypt_payload, shard_payload, reconstruct_payload,
+        authenticate_api_key, check_permission
+    )
+    from metrics import coordinator_metrics  # type: ignore
 
 # ─────────────────────────────────────────────────────────────────────────────
 # App Setup
