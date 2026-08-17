@@ -51,7 +51,7 @@ class FailurePredictor:
         if self.global_model is None or self.local_model is None:
             self.train_baseline()
 
-        features = np.array([[cpu, ram, disk, latency]])
+        features = np.array([[cpu, ram, disk, latency]], dtype=np.float64)
 
         # score_samples returns the negative anomaly score (lower is more anomalous)
         global_score = float(self.global_model.score_samples(features)[0])
@@ -115,7 +115,7 @@ class LatencyPredictor:
         if self.global_model is None or self.local_model is None:
             self.train_baseline()
 
-        features    = np.array([[cpu, ram, file_size_mb]])
+        features    = np.array([[cpu, ram, file_size_mb]], dtype=np.float64)
         global_pred = float(self.global_model.predict(features)[0])
         local_pred  = float(self.local_model.predict(features)[0])
 

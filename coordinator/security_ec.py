@@ -125,19 +125,17 @@ def shard_payload(data: bytes, k: int = 2, m: int = 1) -> List[bytes]:
                 chunk = chunk.ljust(chunk_size, b'\x00')
             data_shards.append(chunk)
             
-        # Parity calculation using byte-wise Reed-Solomon
-        parity_shards = []
-        for p in range(m):
-            parity_chunk = bytearray(chunk_size)
-            for byte_idx in range(chunk_size):
-                byte_vector = bytes([sh[byte_idx] for sh in data_shards])
-                encoded = rs.encode(byte_vector)
-                parity_chunk[byte_idx] = encoded[len(byte_vector) + p]
-            parity_shards.append(bytes(parity_chunk))
-            
+        # Parity calculation using byte-wise Reed-Solomon (Single-pass transposed encoding)
+        parity_shards = [bytearray(chunk_size) for _ in range(m)]
+        for byte_idx in range(chunk_size):
+            byte_vector = bytes(sh[byte_idx] for sh in data_shards)
+            encoded = rs.encode(byte_vector)
+            for p in range(m):
+                parity_shards[p][byte_idx] = encoded[k + p]
+
         # Store original data length in metadata header for each shard
         header = data_len.to_bytes(4, 'big')
-        return [header + sh for sh in (data_shards + parity_shards)]
+        return [header + sh for sh in data_shards] + [header + bytes(psh) for psh in parity_shards]
     else:
         # Native XOR Parity Engine (K=2, M=1)
         data_len = len(data)
@@ -176,25 +174,15 @@ def reconstruct_payload(shards: List[Optional[bytes]], k: int = 2, m: int = 1) -
         # Reconstruct missing data shards byte-by-byte using Reed-Solomon decoding
         missing_data_indices = [i for i in range(k) if reconstructed_data_shards[i] is None]
         if missing_data_indices:
-            erasure_pos = []
-            available_vector = []
-            for i in range(k + m):
-                if raw_shards[i] is None:
-                    erasure_pos.append(i)
-                else:
-                    available_vector.append(i)
-                    
+            erase_pos = [i for i in range(k + m) if raw_shards[i] is None]
             for idx in missing_data_indices:
                 reconstructed_data_shards[idx] = bytearray(chunk_size)
                 
+            encoded_buf = bytearray(k + m)
             for byte_idx in range(chunk_size):
-                encoded_buf = bytearray(k + m)
-                erase_pos = []
                 for sh_idx in range(k + m):
                     if raw_shards[sh_idx] is not None:
                         encoded_buf[sh_idx] = raw_shards[sh_idx][byte_idx]
-                    else:
-                        erase_pos.append(sh_idx)
                 decoded = rs.decode(encoded_buf, erase_pos=erase_pos)[0]
                 for idx in missing_data_indices:
                     reconstructed_data_shards[idx][byte_idx] = decoded[idx]

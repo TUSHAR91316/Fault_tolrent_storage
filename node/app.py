@@ -61,12 +61,14 @@ r_client = get_redis_client()
 def get_db():
     conn = sqlite3.connect(DB_FILE, check_same_thread=False)
     conn.row_factory = sqlite3.Row
+    conn.execute("PRAGMA journal_mode=WAL;")
+    conn.execute("PRAGMA synchronous=NORMAL;")
+    conn.execute("PRAGMA temp_store=MEMORY;")
     return conn
 
 def init_db():
     with _db_lock:
         conn = get_db()
-        conn.execute("PRAGMA journal_mode=WAL;")
         conn.executescript('''
             CREATE TABLE IF NOT EXISTS files (
                 file_id     TEXT PRIMARY KEY,
