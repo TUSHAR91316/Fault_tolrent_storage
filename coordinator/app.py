@@ -408,15 +408,17 @@ def upload():
 
     coordinator_metrics.inc("files_stored_total")
 
-    # Report clean upload for Incremental Learning (Pattern 2)
+    # Report clean upload for Incremental Learning (Pattern 2) asynchronously in background
     if content_sample.strip():
-        try:
-            http_session.post("http://ai-analyzer:5200/feedback", json={
-                "content": content_sample[:10000],
-                "label": 0
-            }, timeout=2)
-        except Exception as e:
-            app.logger.warning("Feedback to AI service failed: %s", e)
+        def _async_feedback(sample_text):
+            try:
+                http_session.post("http://ai-analyzer:5200/feedback", json={
+                    "content": sample_text,
+                    "label": 0
+                }, timeout=3)
+            except Exception as e:
+                app.logger.warning("Feedback to AI service failed: %s", e)
+        GLOBAL_THREAD_POOL.submit(_async_feedback, content_sample[:10000])
 
     return jsonify({
         'status':   'success',
@@ -468,9 +470,12 @@ def download(file_id):
 
     def _fetch_shard(idx: int):
         target_node = NODES[idx % len(NODES)]
+        with _status_lock:
+            if node_status.get(target_node) == 'offline':
+                return idx, None  # Fast short-circuit: skip connecting to known-dead node
         shard_id = f"{file_id}_shard_{idx}"
         try:
-            r = http_session.get(f"{target_node}/store/{shard_id}", timeout=6)
+            r = http_session.get(f"{target_node}/store/{shard_id}", timeout=4)
             if r.status_code == 200:
                 return idx, r.content
         except Exception:

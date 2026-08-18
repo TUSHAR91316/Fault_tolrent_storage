@@ -284,8 +284,14 @@ def retrieve(file_id):
         if len(_latencies) > 20:
             _latencies.pop(0)
 
+    if is_hot:
+        return send_file(
+            BytesIO(file_bytes),
+            download_name=row['filename'],
+            as_attachment=True
+        )
     return send_file(
-        BytesIO(file_bytes),
+        row['path'],
         download_name=row['filename'],
         as_attachment=True
     )

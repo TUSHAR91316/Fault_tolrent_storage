@@ -114,13 +114,21 @@ def handle_telemetry(data):
         if len(metrics_log) > 200:
             metrics_log.pop(0)
 
-    # FIX Bug 3: wrap all Redis calls in try/except so a transient Redis
-    # drop doesn't crash the subscriber thread.
     try:
         # 1. Predictive Failure Anomaly Detection
         is_anomaly    = failure_predictor.predict_anomaly(cpu, ram, disk, latency)
         health_status = "degraded" if is_anomaly else "healthy"
-        redis_client.hset("node_health_status", node, health_status)
+
+        # 2. Latency Prediction for Intelligent Load Balancing
+        predicted_1mb_latency  = latency_predictor.predict_latency(cpu, ram, 1.0)
+        predicted_10mb_latency = latency_predictor.predict_latency(cpu, ram, 10.0)
+
+        # Batch Redis state updates into a single atomic pipeline roundtrip
+        pipe = redis_client.pipeline()
+        pipe.hset("node_health_status", node, health_status)
+        pipe.hset("node_predicted_latency_1mb",  node, str(predicted_1mb_latency))
+        pipe.hset("node_predicted_latency_10mb", node, str(predicted_10mb_latency))
+        pipe.execute()
 
         if is_anomaly:
             publish_alert({
@@ -129,12 +137,6 @@ def handle_telemetry(data):
                 "cpu":     cpu, "ram": ram, "disk": disk, "latency": latency,
                 "message": f"Predictive Failure Warning: Anomalous resource utilization detected on node {node}!"
             })
-
-        # 2. Latency Prediction for Intelligent Load Balancing
-        predicted_1mb_latency  = latency_predictor.predict_latency(cpu, ram, 1.0)
-        predicted_10mb_latency = latency_predictor.predict_latency(cpu, ram, 10.0)
-        redis_client.hset("node_predicted_latency_1mb",  node, str(predicted_1mb_latency))
-        redis_client.hset("node_predicted_latency_10mb", node, str(predicted_10mb_latency))
     except Exception as e:
         print(f"[AI] Redis write error in handle_telemetry: {e}")
 
@@ -163,28 +165,23 @@ def handle_security_event(data):
                 "file_id":    file_id,
                 "filename":   filename,
                 "confidence": confidence,
-                "message":    f"Security Alert: High-risk content detected in upload '{filename}'. File blocked in real-time."
+                "message":    f"Zero-Day Threat Blocked: File '{filename}' flagged as malicious with confidence {confidence:.2f}!"
             })
 
     elif event_type == "access":
         ip      = data.get("ip")
         file_id = data.get("file_id")
-        action  = data.get("action", "")
-
-        # Track download count to enable hot-tiering (only for downloads)
-        if action == "download" and file_id:
-            _track_and_promote_hot_file(file_id)
-
-        # Volumetric anomaly detection
-        if ip and access_anomaly_detector.record_access_and_check(ip):
+        action  = data.get("action", "access")
+        is_anomaly = access_anomaly_detector.record_and_check(ip)
+        if is_anomaly:
             try:
                 redis_client.sadd("blocked_ips", ip)
             except Exception as e:
                 print(f"[AI] Redis error blocking IP {ip}: {e}")
             publish_alert({
-                "type":    "volumetric_abuse",
+                "type":    "ddos_anomaly",
                 "ip":      ip,
-                "message": f"Active Defense: Volumetric access anomaly detected from IP {ip}. Client IP blacklisted in real-time."
+                "message": f"Active Defense Triggered: High-frequency burst detected from IP {ip}! IP added to Active Defense blacklist."
             })
 
 
@@ -192,9 +189,11 @@ def publish_alert(alert: dict):
     alert["timestamp"] = time.strftime("%Y-%m-%d %H:%M:%S")
     alert_str = json.dumps(alert)
     try:
-        redis_client.lpush("system_alerts", alert_str)
-        redis_client.ltrim("system_alerts", 0, 99)        # keep last 100 alerts
-        redis_client.publish("alerts_channel", alert_str)
+        pipe = redis_client.pipeline()
+        pipe.lpush("system_alerts", alert_str)
+        pipe.ltrim("system_alerts", 0, 99)        # keep last 100 alerts
+        pipe.publish("alerts_channel", alert_str)
+        pipe.execute()
     except Exception as e:
         print(f"[AI] Redis error in publish_alert: {e}")
     with log_lock:
