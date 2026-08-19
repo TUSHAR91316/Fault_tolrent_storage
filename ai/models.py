@@ -217,8 +217,8 @@ class AccessAnomalyDetector:
         self.TIME_WINDOW  = 10.0   # seconds
         self.THRESHOLD    = 15     # requests per window
 
-    def record_access_and_check(self, ip):
-        """Records access from IP and returns True if suspicious behavior detected."""
+    def record_access_and_check(self, ip: str) -> bool:
+        """Records access from IP and returns True if suspicious rate burst is detected."""
         with self.history_lock:
             now = time.time()
             if ip not in self.history:
@@ -226,6 +226,10 @@ class AccessAnomalyDetector:
             self.history[ip].append(now)
             self.history[ip] = [t for t in self.history[ip] if now - t <= self.TIME_WINDOW]
             return len(self.history[ip]) > self.THRESHOLD
+
+    def record_and_check(self, ip: str) -> bool:
+        """Alias for record_access_and_check."""
+        return self.record_access_and_check(ip)
 
 # ─────────────────────────────────────────────────────────────────────────────
 # Global model instances — trained at import time

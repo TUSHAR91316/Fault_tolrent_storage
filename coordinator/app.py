@@ -166,8 +166,57 @@ node_status   = {n: 'unknown' for n in NODES}   # shared status dict
 _status_lock  = threading.Lock()                 # guards node_status AND _recovering
 _recovering   = set()                            # nodes currently being recovered
 
-def _do_recovery(node_url: str):
-    """Background recovery: reconstruct missing shards for node using Erasure Coding."""
+def _repair_file_shard_for_node(row: sqlite3.Row, node_url: str, node_idx: int) -> bool:
+    """Reconstruct and repair a single missing shard on a newly recovered storage node."""
+    stored_nodes = row['nodes'].split(',')
+    if node_url in stored_nodes:
+        return False  # Node already has a shard for this file
+
+    shard_file_id = f"{row['file_id']}_shard_{node_idx}"
+
+    # Fetch surviving shards from peer nodes
+    shards_buf = []
+    for idx, peer_node in enumerate(NODES):
+        if peer_node == node_url:
+            shards_buf.append(None)
+            continue
+        try:
+            resp = http_session.get(f"{peer_node}/store/{row['file_id']}_shard_{idx}", timeout=4)
+            shards_buf.append(resp.content if resp.status_code == 200 else None)
+        except Exception:
+            shards_buf.append(None)
+
+    # Reconstruct payload and extract the missing shard
+    try:
+        reconstructed = reconstruct_payload(shards_buf, k=DEFAULT_K, m=DEFAULT_M)
+        resharded = shard_payload(reconstructed, k=DEFAULT_K, m=DEFAULT_M)
+        target_shard_bytes = resharded[node_idx] if node_idx < len(resharded) else resharded[0]
+
+        post_resp = http_session.post(
+            f"{node_url}/store",
+            files={'file': (f"{row['filename']}.shard", target_shard_bytes)},
+            data={'file_id': shard_file_id},
+            timeout=8
+        )
+        if post_resp.status_code == 200:
+            coordinator_metrics.inc("erasure_reconstructions_total")
+            new_nodes = ','.join(sorted(set(stored_nodes + [node_url])))
+            with _db_lock:
+                conn = get_db()
+                conn.execute(
+                    "UPDATE files SET nodes=? WHERE file_id=?",
+                    (new_nodes, row['file_id'])
+                )
+                conn.commit()
+                conn.close()
+            return True
+    except Exception as e:
+        app.logger.warning("Recovery reconstruction failed for %s on %s: %s", row['file_id'], node_url, e)
+    return False
+
+
+def _do_recovery(node_url: str) -> None:
+    """Background recovery daemon: reconstructs missing shards for node using Erasure Coding."""
     app.logger.info("Auto-recovery started for %s", node_url)
     try:
         conn = get_db()
@@ -176,56 +225,9 @@ def _do_recovery(node_url: str):
         ).fetchall()
         conn.close()
 
+        node_idx = NODES.index(node_url) if node_url in NODES else 0
         for row in rows:
-            stored_nodes = row['nodes'].split(',')
-            if node_url in stored_nodes:
-                continue  # Node already has a shard for this file
-
-            # Determine missing shard slot
-            node_idx = NODES.index(node_url) if node_url in NODES else 0
-            shard_file_id = f"{row['file_id']}_shard_{node_idx}"
-            
-            # Fetch shards from surviving nodes
-            shards_buf = []
-            for idx, n in enumerate(NODES):
-                if n == node_url:
-                    shards_buf.append(None)
-                    continue
-                try:
-                    s_r = http_session.get(f"{n}/store/{row['file_id']}_shard_{idx}", timeout=5)
-                    if s_r.status_code == 200:
-                        shards_buf.append(s_r.content)
-                    else:
-                        shards_buf.append(None)
-                except Exception:
-                    shards_buf.append(None)
-
-            # Reconstruct missing payload if possible
-            try:
-                reconstructed = reconstruct_payload(shards_buf, k=DEFAULT_K, m=DEFAULT_M)
-                # Re-shard to extract the specific missing shard
-                resharded = shard_payload(reconstructed, k=DEFAULT_K, m=DEFAULT_M)
-                target_shard_bytes = resharded[node_idx] if node_idx < len(resharded) else resharded[0]
-
-                pr = http_session.post(
-                    f"{node_url}/store",
-                    files={'file': (f"{row['filename']}.shard", target_shard_bytes)},
-                    data={'file_id': shard_file_id},
-                    timeout=10
-                )
-                if pr.status_code == 200:
-                    coordinator_metrics.inc("erasure_reconstructions_total")
-                    new_nodes = ','.join(sorted(set(stored_nodes + [node_url])))
-                    with _db_lock:
-                        conn = get_db()
-                        conn.execute(
-                            "UPDATE files SET nodes=? WHERE file_id=?",
-                            (new_nodes, row['file_id'])
-                        )
-                        conn.commit()
-                        conn.close()
-            except Exception as e:
-                app.logger.warning("Recovery reconstruction failed for %s on %s: %s", row['file_id'], node_url, e)
+            _repair_file_shard_for_node(row, node_url, node_idx)
     except Exception as e:
         app.logger.error("Recovery error for %s: %s", node_url, e)
     finally:
